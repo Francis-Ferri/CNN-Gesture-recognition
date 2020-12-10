@@ -88,9 +88,9 @@ function transformed_samples = generate_data(samples, avg_groundThuth_length)
     names_samples = fieldnames(samples);
     % Allocate space for the results
     transformed_samples = cell(length(names_samples), 1);
-    for j = 1: length(names_samples)
+    for i = 1: length(names_samples)
         % Get sample data
-        sample = samples.(names_samples{j});
+        sample = samples.(names_samples{i});
         emg = sample.emg;
         gestureName = sample.gestureName;
         % get gesture's boundaries
@@ -115,9 +115,9 @@ function transformed_samples = generate_data(samples, avg_groundThuth_length)
         chanels = fieldnames(emg); % get the chanels
         % Get just the movement protion of the signal
         num_samples = limits(2)-limits(1)+1;
-        signal = zeros(num_samples, length(chanels));
-        for k = 1:length(chanels)
-            signal(:,k) = emg.(chanels{k})(limits(1):limits(2));
+        signal = zeros(num_samples, length(chanels)); %[num_samples, 8]
+        for j = 1:length(chanels)
+            signal(:,j) = emg.(chanels{j})(limits(1):limits(2));
         end
         % Spectrogram parameters
         %{
@@ -139,16 +139,16 @@ function transformed_samples = generate_data(samples, avg_groundThuth_length)
             % Allocate space for the spectrograms
             spectrograms = zeros(size(frecuencies,2), size(signal,2)); % 100 x 8
             % calculate the spectrogram for each chanel
-            for k = 1:size(signal,2)
-                spectrograms(:,k) = spectrogram(signal(position:(position+frame_size), k), frame_size, 0, frecuencies, sample_frecuency, 'yaxis');
+            for j = 1:size(signal,2)
+                spectrograms(:,j) = spectrogram(signal(position:(position+frame_size), j), frame_size, 0, frecuencies, sample_frecuency, 'yaxis');
             end
             spectrograms = abs(spectrograms);
             frames{frame_idx,1} = spectrograms;
             position = position + frame_size;
             frame_idx = frame_idx+1;
         end
-        transformed_samples{j,1} = frames;
-        transformed_samples{j,2} = gestureName;
+        transformed_samples{i,1} = frames;
+        transformed_samples{i,2} = gestureName;
     end
 end
 
