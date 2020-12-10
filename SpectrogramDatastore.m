@@ -8,6 +8,7 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
         NumClasses
         SequenceDimension
         MiniBatchSize
+        
     end
     
     properties(SetAccess = protected)
@@ -90,6 +91,7 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
             % Reset to the start of the data
             reset(ds.Datastore);
             ds.CurrentFileIndex = 1;
+            ds.NumObservations = size(ds.Datastore.Files, 1);
         end
         
         function subds = partition(myds,n,ii)
