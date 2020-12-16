@@ -42,6 +42,53 @@ disp(num_testing_samples);
 % Se limpian variables innecesarias
 clear datastore num_training_samples num_validation_samples num_testing_samples
 
+%%
+inputSize = dimensions;
+numHiddenUnits = 200;
+numClasses = length(classes);
+
+layers = [ ...
+    sequenceInputLayer(inputSize)
+    flattenLayer
+    lstmLayer(numHiddenUnits,'OutputMode','sequence')
+    fullyConnectedLayer(numClasses)
+    softmaxLayer
+    classificationLayer];
+
+%%
+miniBatchSize = 1;
+options = trainingOptions('adam', ...
+    'MaxEpochs',1, ...
+    'GradientThreshold',2, ...
+    'MiniBatchSize',miniBatchSize, ...
+    'Verbose',0, ...
+    'Plots','training-progress');
+
+%%
+net = trainNetwork(training_datastore, layers, options);
+
+%%
+predict = read(testing_datastore);
+
+%%
+YPred = classify(net,predict.sequences);
+
+%%
+
+maxEpochs = 100;
+miniBatchSize = 8;
+options = trainingOptions('adam', ...
+    'ExecutionEnvironment','cpu', ...
+    'GradientThreshold',1, ...
+    'MaxEpochs',maxEpochs, ...
+    'MiniBatchSize',miniBatchSize, ...
+    'SequenceLength','longest', ...
+    'Shuffle','never', ...
+    'Verbose',0, ...
+    'Plots','training-progress');
+
+%%
+net = trainNetwork(training_datastore,layers,options);
 %% THE NETWORK ARCHITECTURE AND THE TRAINING PARAMETERS ARE ESTABLISHED
 layers = [
     imageInputLayer(dimensions,"Name","imageinput","Normalization","none")
@@ -94,6 +141,29 @@ function dimensions = get_input_dimensons(datastore)
     table = preview(datastore);
     structure = table{1,1};
     sample_data = structure{1,1};
-    dimensions = size(sample_data);
+    dimensions = [size(sample_data,1), size(sample_data,2),size(sample_data,3)];
 end
+
+%%
+%{
+%% Get the sequence lengths for each observation.
+numObservations = training_datastore.NumObservations;
+for i=1:numObservations
+    sequence = load(training_datastore.Datastore.Files{i}).frames;
+    sequenceLengths(i) = size(sequence,1);
+end
+%%
+[sequenceLengths,idx] = sort(sequenceLengths);
+training_datastore.Datastore.Files = training_datastore.Datastore.Files(idx);
+training_datastore.Labels = training_datastore.Labels(idx);
+
+%%
+figure
+bar(sequenceLengths)
+ylim([0 55])
+xlabel("Sequence")
+ylabel("Length")
+title("Sorted Data")
+%%
+%}
 

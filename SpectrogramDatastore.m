@@ -32,18 +32,17 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
             ds.Datastore = fds;
             % Read labels from folder names
             labels = createLabels(fds.Files);
-            labels = categorical(labels);
-            ds.Labels = setcats(labels,{'fist', 'noGesture', 'open', ... 
+            labels = categorical(labels,{'fist', 'noGesture', 'open', ... 
                 'pinch','waveIn', 'waveOut'});
+            ds.Labels = labels;
             ds.NumClasses = numel(unique(labels));
             numObservations = numel(fds.Files);
             % Determine sequence dimension. When you define the LSTM
             % network architecture, you can use this property to
             % specify the input size of the sequenceInputLayer.
             ds.SequenceDimension = [100,8];
-            
             % Initialize datastore properties.
-            ds.MiniBatchSize = 8;
+            ds.MiniBatchSize = 1;
             ds.NumObservations = numObservations;
             ds.CurrentFileIndex = 1;
         end
@@ -67,24 +66,31 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
                 ds.CurrentFileIndex = ds.CurrentFileIndex + 1;
             end
             % Se preprocesan los datos
-            data = preprocessData(ds,predictors,responses);
+            data = preprocessData(ds,predictors);
         end
         
-        function data = preprocessData(ds,samples,responses)
+        function data = preprocessData(ds,predictors)
             miniBatchSize = ds.MiniBatchSize;
-            predictors = {};
-            labels = {};
-            idx = 1;
+            sequences = cell(miniBatchSize, 1);
+            labels = cell(miniBatchSize, 1);
+            % Creating data
+            m = size(predictors{1}{1,1},1); % 100
+            n = size(predictors{1}{1,1},2); % 8
             for i = 1:miniBatchSize
-                for j =  1:size(samples{i},1)
-                    predictors{idx, 1} = samples{i}{j};
-                    labels{idx, 1} = responses{i};
-                    idx = idx + 1;
+                num_frames = length(predictors{i});
+                sequence = zeros(m, n,num_frames);
+                sequence_labels  = cell(1, num_frames);
+                for j = 1:num_frames
+                    sequence(:,:,j)= predictors{i}{j,1};
+                    sequence_labels{1, j}= predictors{i}{j,2};
                 end
+                sequence = reshape(sequence, size(sequence, 1),size(sequence, 2), 1, size(sequence, 3));
+                sequences{i,1} = sequence;
+                labels{i,1} = categorical(sequence_labels, {'fist', 'noGesture', 'open', ... 
+                'pinch','waveIn', 'waveOut'});              
             end
-            
             % En este caso enviams los datos en forma de tabla
-            data = table(predictors,labels);
+            data = table(sequences,labels);
         end
         
         function reset(ds)
@@ -97,14 +103,15 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
         function subds = partition(myds,n,ii)
             subds = copy(myds);
             subds.Datastore = partition(subds.Datastore,n,ii);
+            
             numObservations = numel(subds.Datastore.Files);
             labels = createLabels(subds.Datastore.Files);
-            subds.Labels = categorical(labels);
-            labels = categorical(labels);
-            subds.Labels = setcats(labels,{'fist', 'noGesture', 'open', ... 
+            labels= categorical(labels);
+            subds.Labels = categorical(labels, {'fist', 'noGesture', 'open', ... 
                 'pinch','waveIn', 'waveOut'});
             subds.NumObservations = numObservations;
-            reset(subds);         
+            reset(subds);
+            reset(myds);
         end
                 
         
