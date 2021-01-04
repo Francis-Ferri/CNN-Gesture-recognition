@@ -1,3 +1,13 @@
+%{
+CUSTOM MINIBATCH SPECTROGRAM DATASTORE
+    1. A Datastore type fileDatastore is generated
+    2. Spectrogram files are read
+    3. A Labels field is created in the Datastore
+    4. Add support to minibatch
+    5. Add support to shuffle
+    6. Add support to partitions
+%}
+
 classdef SpectrogramDatastore < matlab.io.Datastore & ...
                                 matlab.io.datastore.MiniBatchable & ...
                                 matlab.io.datastore.Shuffleable & ...
@@ -7,8 +17,7 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
         Labels
         NumClasses
         SequenceDimension
-        MiniBatchSize
-        
+        MiniBatchSize    
     end
     
     properties(SetAccess = protected)
@@ -22,18 +31,13 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
     
     methods
         function ds = SpectrogramDatastore(folder)
-            % Construct a MySequenceDatastore object
-
-            % Create a file datastore. The readSequence function is
-            % defined following the class definition.
+            % Create a file datastore.
             fds = fileDatastore(folder, ...
                 'ReadFcn',@readSequence, ...
                 'IncludeSubfolders',true);
             ds.Datastore = fds;
             % Read labels from folder names
             labels = createLabels(fds.Files);
-            labels = categorical(labels,{'fist', 'noGesture', 'open', ... 
-                'pinch','waveIn', 'waveOut'});
             ds.Labels = labels;
             ds.NumClasses = numel(unique(labels));
             numObservations = numel(fds.Files);
@@ -45,6 +49,10 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
             ds.MiniBatchSize = 1;
             ds.NumObservations = numObservations;
             ds.CurrentFileIndex = 1;
+            % shuffle
+            ds = shuffle(ds);
+            % order
+            ds = order(ds);
         end
         
         function tf = hasdata(ds)
@@ -103,40 +111,43 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
         function subds = partition(myds,n,ii)
             subds = copy(myds);
             subds.Datastore = partition(subds.Datastore,n,ii);
-            
             numObservations = numel(subds.Datastore.Files);
-            labels = createLabels(subds.Datastore.Files);
-            labels= categorical(labels);
-            subds.Labels = categorical(labels, {'fist', 'noGesture', 'open', ... 
-                'pinch','waveIn', 'waveOut'});
+            % Create the new labels
+            subds.Labels = createLabels(subds.Datastore.Files);
             subds.NumObservations = numObservations;
             reset(subds);
             reset(myds);
         end
                 
-        
         function dsNew = shuffle(ds)
-            % dsNew = shuffle(ds) shuffles the files and the
-            % corresponding labels in the datastore.
-            
             % Create a copy of datastore
             dsNew = copy(ds);
             dsNew.Datastore = copy(ds.Datastore);
             fds = dsNew.Datastore;
-            
-            % Shuffle files and corresponding labels
+            % Shuffle files and their corresponding labels
             numObservations = dsNew.NumObservations;
+            rng(9); % seed
             idx = randperm(numObservations);
             fds.Files = fds.Files(idx);
             dsNew.Labels = dsNew.Labels(idx);
         end
+        
+        function ds = order(ds)
+            numObservations = numel(ds.Labels);
+            sequenceLengths = zeros(numObservations, 1);
+            for i=1:numObservations
+                filename = ds.Datastore.Files{i};
+                data = load(filename).frames;
+                sequenceLengths(i) = size(data,1);
+            end
+            [~,idx] = sort(sequenceLengths);
+            ds.Datastore.Files = ds.Datastore.Files(idx);
+            ds.Labels = ds.Labels(idx);
+        end
+        
     end
     
     methods (Access = protected)
-        % If you use the DsFileSet object as a property, then 
-        % you must define the copyElement method. The copyElement
-        % method allows methods such as readall and preview to 
-        % remain stateless
         function dscopy = copyElement(ds)
             dscopy = copyElement@matlab.mixin.Copyable(ds);
             dscopy.Datastore = copy(ds.Datastore);
@@ -148,28 +159,29 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
     end
     
     methods (Hidden = true)
-
         function frac = progress(ds)
             % Determine percentage of data read from datastore
             frac = (ds.CurrentFileIndex - 1) / ds.NumObservations;
         end
-
     end
+    
 end
 
 %% FUNCION PARA CREAR ETIQUETAS
 function labels = createLabels(files)
-    %Se obtiene el numero de archivos
+    % Get the number of files
     numObservations = numel(files);
-    % Para cada archivo
+    % Allocate spacce for labels
     labels = cell(numObservations,1);
     for i = 1:numObservations
         file = files{i};
-        filepath = fileparts(file);
-        % La ultima parte dela ruta antes del nombre del archivo es la etiqueta
-        [~,label] = fileparts(filepath);
+        filepath = fileparts(file); % ../datastore/class
+        % The last part of the path is the label
+        [~,label] = fileparts(filepath); % [../datastore, class]
         labels{i,1} = label;
     end
+    labels = categorical(labels,{'fist', 'noGesture', 'open', ... 
+                'pinch','waveIn', 'waveOut'});
 end
 
 function data = readSequence(filename)

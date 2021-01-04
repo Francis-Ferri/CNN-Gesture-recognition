@@ -7,26 +7,17 @@ classes = ["fist","noGesture","open","pinch","waveIn","waveOut"];
 datastore = SpectrogramDatastore(data_dir);
 clear data_dir
 
-            %% Para pruebas
+%% VISUALIZE THE DATA FORMAT
 table = preview(datastore);
 
 %% THE INPUT DIMENSIONS ARE DEFINED
-% Get the input dimensions of the DataStore
 dimensions = get_input_dimensons(datastore);
 
-%% THE DATA IS MIXED
-% The data is mixed to obtain a new order
-datastore = shuffle(datastore);
+%% DEFINE THE AMOUNT OF DATA
 % The amount of data to be used in the creation is specified] 0: 1]
 data_amount = 0.75; %1
-% Obtain the limit value index
-idx_limit = floor(size(datastore.Labels,1) * data_amount);
-% The data is split within the datastore
-datastore.Datastore.Files = datastore.Datastore.Files(1:idx_limit);
-datastore.Labels = datastore.Labels(1:idx_limit);
-% NumObservations must be counted again
-reset(datastore);
-clear data_amount idx_limit
+datastore = setDataAmount(datastore, data_amount);
+clear data_amount
 
 %% THE DATA IS DIVIDED IN TRAINING-VALIDATION-TESTING
 % The training-validation-tests data is obtained
@@ -36,24 +27,20 @@ num_training_samples = ['Training samples: ', num2str(training_datastore.NumObse
 num_validation_samples = ['Validation samples: ', num2str(validation_datastore.NumObservations)];
 num_testing_samples = ['Testing samples: ', num2str(testing_datastore.NumObservations)];
 % The amount of training-validation-tests data is printed
-disp(num_training_samples);
-disp(num_validation_samples);
-disp(num_testing_samples);
-% Se limpian variables innecesarias
+fprintf('\n%s\n%s\n%s\n',num_training_samples,num_validation_samples, num_testing_samples);
 clear datastore num_training_samples num_validation_samples num_testing_samples
 
 %%
-inputSize = dimensions;
 numHiddenUnits = 200;
 numClasses = length(classes);
-
 layers = [ ...
-    sequenceInputLayer(inputSize)
+    sequenceInputLayer(dimensions)
     flattenLayer
     lstmLayer(numHiddenUnits,'OutputMode','sequence')
     fullyConnectedLayer(numClasses)
     softmaxLayer
     classificationLayer];
+clear dimensions numHiddenUnits numClasses
 
 %%
 miniBatchSize = 1;
@@ -63,6 +50,7 @@ options = trainingOptions('adam', ...
     'MiniBatchSize',miniBatchSize, ...
     'Verbose',0, ...
     'Plots','training-progress');
+clear miniBatchSize
 
 %%
 net = trainNetwork(training_datastore, layers, options);
@@ -72,6 +60,7 @@ predict = read(testing_datastore);
 
 %%
 YPred = classify(net,predict.sequences);
+
 
 %%
 
@@ -142,6 +131,17 @@ function dimensions = get_input_dimensons(datastore)
     structure = table{1,1};
     sample_data = structure{1,1};
     dimensions = [size(sample_data,1), size(sample_data,2),size(sample_data,3)];
+end
+
+%% FUNCTION TO SET THE AMOUNT OF DATA
+function datastore = setDataAmount(datastore, data_amount)
+    % Obtain the limit value index
+    idx_limit = floor(size(datastore.Labels,1) * data_amount);
+    % The data is split within the datastore
+    datastore.Datastore.Files = datastore.Datastore.Files(1:idx_limit);
+    datastore.Labels = datastore.Labels(1:idx_limit);
+    % NumObservations must be counted again
+    reset(datastore);
 end
 
 %%
