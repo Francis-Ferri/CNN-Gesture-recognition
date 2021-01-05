@@ -46,7 +46,7 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
             % specify the input size of the sequenceInputLayer.
             ds.SequenceDimension = [100,8];
             % Initialize datastore properties.
-            ds.MiniBatchSize = 1;
+            ds.MiniBatchSize = 8;
             ds.NumObservations = numObservations;
             ds.CurrentFileIndex = 1;
             % shuffle
@@ -66,11 +66,11 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
             miniBatchSize = ds.MiniBatchSize;
             info = struct;
             predictors = cell(miniBatchSize, 1);
-            responses = cell(miniBatchSize, 1);
+            %responses = cell(miniBatchSize, 1);
             % Se leen los datos para el tamaño del minibatch
             for i = 1:miniBatchSize
                 predictors{i,1} = read(ds.Datastore).frames;
-                responses{i,1} = ds.Labels(ds.CurrentFileIndex);
+                %responses{i,1} = ds.Labels(ds.CurrentFileIndex);
                 ds.CurrentFileIndex = ds.CurrentFileIndex + 1;
             end
             % Se preprocesan los datos
@@ -81,16 +81,22 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
             miniBatchSize = ds.MiniBatchSize;
             sequences = cell(miniBatchSize, 1);
             labels = cell(miniBatchSize, 1);
+            % CALCULAR EL MAXIMO DE LAS LONGITUDES
+            predictors_lengths = cellfun(@(predictor) length(predictor), predictors);
+            max_length = max(predictors_lengths);
+            
+            
             % Creating data
-            m = size(predictors{1}{1,1},1); % 100
-            n = size(predictors{1}{1,1},2); % 8
             for i = 1:miniBatchSize
                 num_frames = length(predictors{i});
-                sequence = zeros(m, n,num_frames);
-                sequence_labels  = cell(1, num_frames);
+                sequence = zeros(ds.SequenceDimension(1), ds.SequenceDimension(2), max_length);
+                sequence_labels  = cell(1, max_length);
                 for j = 1:num_frames
                     sequence(:,:,j)= predictors{i}{j,1};
                     sequence_labels{1, j}= predictors{i}{j,2};
+                end
+                for j = 1:(max_length - num_frames)
+                    sequence_labels{1, num_frames + j} = 'noGesture';
                 end
                 sequence = reshape(sequence, size(sequence, 1),size(sequence, 2), 1, size(sequence, 3));
                 sequences{i,1} = sequence;

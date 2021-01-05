@@ -1,27 +1,26 @@
-%% THE TRAINING PATH IS DEFINED
-data_dir = fullfile('Datastores', 'training_datastore');
+%% THE TRAINING AND VALIDATION PATHS ARE DEFINED
+data_dir_training = fullfile('Datastores', 'training_datastore');
+data_dir_validation = fullfile('Datastores', 'validation_datastore');
 
-%% THE DATASTORE IS CREATED
+%% THE DATASTORES RE CREATED
 % The classes are defined
 classes = ["fist","noGesture","open","pinch","waveIn","waveOut"];
-datastore = SpectrogramDatastore(data_dir);
-clear data_dir
-
-%% VISUALIZE THE DATA FORMAT
-table = preview(datastore);
+training_datastore = SpectrogramDatastore(data_dir_training);
+validation_datastore = SpectrogramDatastore(data_dir_validation);
+% data_sample = preview(training_datastore);
+clear data_dir_training data_dir_validation
 
 %% THE INPUT DIMENSIONS ARE DEFINED
-dimensions = get_input_dimensons(datastore);
+dimensions = get_input_dimensons(training_datastore);
 
 %% DEFINE THE AMOUNT OF DATA
-% The amount of data to be used in the creation is specified] 0: 1]
-data_amount = 0.75; %1
-datastore = setDataAmount(datastore, data_amount);
-clear data_amount
+% The amount of data to be used in the creation is specified ]0:1]
+training_datastore = setDataAmount(training_datastore, 0.75);
+validation_datastore = setDataAmount(validation_datastore, 0.75);
 
 %% THE DATA IS DIVIDED IN TRAINING-VALIDATION-TESTING
 % The training-validation-tests data is obtained
-[training_datastore, validation_datastore, testing_datastore] = divide_datastore(datastore);
+[validation_datastore, testing_datastore] = divide_datastore(validation_datastore);
 % The total data for training-validation-tests is obtained
 num_training_samples = ['Training samples: ', num2str(training_datastore.NumObservations)];
 num_validation_samples = ['Validation samples: ', num2str(validation_datastore.NumObservations)];
@@ -30,7 +29,7 @@ num_testing_samples = ['Testing samples: ', num2str(testing_datastore.NumObserva
 fprintf('\n%s\n%s\n%s\n',num_training_samples,num_validation_samples, num_testing_samples);
 clear datastore num_training_samples num_validation_samples num_testing_samples
 
-%%
+%% THE NEURAL NETWORK ARCHITECTURE IS DEFINED
 numHiddenUnits = 200;
 numClasses = length(classes);
 layers = [ ...
@@ -42,15 +41,19 @@ layers = [ ...
     classificationLayer];
 clear dimensions numHiddenUnits numClasses
 
-%%
-miniBatchSize = 1;
+%% THE OPTIONS ARE DIFINED
+maxEpochs = 3;
+miniBatchSize = 8;
 options = trainingOptions('adam', ...
-    'MaxEpochs',1, ...
-    'GradientThreshold',2, ...
+    'ExecutionEnvironment','cpu', ...
+    'GradientThreshold',1, ...
+    'MaxEpochs',maxEpochs, ...
     'MiniBatchSize',miniBatchSize, ...
+    'Shuffle','never', ...
     'Verbose',0, ...
+    'ValidationData', validation_datastore, ...  
     'Plots','training-progress');
-clear miniBatchSize
+clear maxEpochs miniBatchSize
 
 %%
 net = trainNetwork(training_datastore, layers, options);
@@ -61,23 +64,6 @@ predict = read(testing_datastore);
 %%
 YPred = classify(net,predict.sequences);
 
-
-%%
-
-maxEpochs = 100;
-miniBatchSize = 8;
-options = trainingOptions('adam', ...
-    'ExecutionEnvironment','cpu', ...
-    'GradientThreshold',1, ...
-    'MaxEpochs',maxEpochs, ...
-    'MiniBatchSize',miniBatchSize, ...
-    'SequenceLength','longest', ...
-    'Shuffle','never', ...
-    'Verbose',0, ...
-    'Plots','training-progress');
-
-%%
-net = trainNetwork(training_datastore,layers,options);
 %% THE NETWORK ARCHITECTURE AND THE TRAINING PARAMETERS ARE ESTABLISHED
 layers = [
     imageInputLayer(dimensions,"Name","imageinput","Normalization","none")
@@ -91,37 +77,13 @@ layers = [
     softmaxLayer("Name","softmax")
     classificationLayer("Name","classoutput")];
 
-%% CONFIGURACION DE LA RED
-minibatchsize = 8;
-options = trainingOptions('sgdm', ...
-    'MiniBatchSize',minibatchsize, ...
-    'InitialLearnRate',0.001, ... %0.0001
-    'ExecutionEnvironment','cpu', ... %gpu %multi-gpu
-    'MaxEpochs',5, ...
-    'ValidationData', validation_datastore, ...  
-    'Verbose',false, ...   
-    'Plots','training-progress', ...
-    'Shuffle','every-epoch');
-% 'ValidationFrequency',300, ...
-% 'DispatchInBackground',true, ...
-%'Shuffle','never', ...
-% Se limpian variables innecesarias
-clear minibatchsize 
-
-%%
-% model = trainNetwork(training_datastore, layers, options);
-
 %%
 
-%% FUNCTION DIVIDE DATASTORE IN TRAINING, VALIDATION AND TESTING
-function [training_datastore, validation_datastore, testing_datastore] = divide_datastore(dataStore)
-    % Training = 50%
-    training_datastore =  partition(dataStore,2,1);
-    remainder_datastore = partition(dataStore,2,2);
-    % Validation = 25%
-    validation_datastore = partition(remainder_datastore,2,1);
-    % Testing = 25%
-    testing_datastore = partition(remainder_datastore,2,2);
+%% FUNCTION TO DIVIDE DATASTORE IN TWO HALVES
+function [first_datstore, second_datastore] = divide_datastore(dataStore)
+    % first_datstore(50%) && second_datastore(50%)
+    first_datstore =  partition(dataStore,2,1);
+    second_datastore = partition(dataStore,2,2);
 end
 
 %% FUNCTION TO GET THE INPUT DIMESIONS
@@ -143,27 +105,3 @@ function datastore = setDataAmount(datastore, data_amount)
     % NumObservations must be counted again
     reset(datastore);
 end
-
-%%
-%{
-%% Get the sequence lengths for each observation.
-numObservations = training_datastore.NumObservations;
-for i=1:numObservations
-    sequence = load(training_datastore.Datastore.Files{i}).frames;
-    sequenceLengths(i) = size(sequence,1);
-end
-%%
-[sequenceLengths,idx] = sort(sequenceLengths);
-training_datastore.Datastore.Files = training_datastore.Datastore.Files(idx);
-training_datastore.Labels = training_datastore.Labels(idx);
-
-%%
-figure
-bar(sequenceLengths)
-ylim([0 55])
-xlabel("Sequence")
-ylabel("Length")
-title("Sorted Data")
-%%
-%}
-
