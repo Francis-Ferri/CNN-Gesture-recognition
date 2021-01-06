@@ -11,7 +11,7 @@ validation_datastore = SpectrogramDatastore(data_dir_validation);
 clear data_dir_training data_dir_validation
 
 %% THE INPUT DIMENSIONS ARE DEFINED
-dimensions = get_input_dimensons(training_datastore);
+inputSize = training_datastore.SequenceDimension;
 
 %% DEFINE THE AMOUNT OF DATA
 % The amount of data to be used in the creation is specified ]0:1]
@@ -31,15 +31,31 @@ clear datastore num_training_samples num_validation_samples num_testing_samples
 
 %% THE NEURAL NETWORK ARCHITECTURE IS DEFINED
 numHiddenUnits = 200;
+filterSize = 2;
+numFilters = 20;
 numClasses = length(classes);
 layers = [ ...
-    sequenceInputLayer(dimensions)
-    flattenLayer
-    lstmLayer(numHiddenUnits,'OutputMode','sequence')
-    fullyConnectedLayer(numClasses)
-    softmaxLayer
-    classificationLayer];
-clear dimensions numHiddenUnits numClasses
+    sequenceInputLayer(inputSize,'Name','input')
+    
+    sequenceFoldingLayer('Name','fold')
+    
+    convolution2dLayer(filterSize,numFilters,'Name','conv')
+    batchNormalizationLayer('Name','bn')
+    reluLayer('Name','relu')
+    
+    sequenceUnfoldingLayer('Name','unfold')
+    flattenLayer('Name','flatten')
+    
+    lstmLayer(numHiddenUnits,'OutputMode','sequence','Name','lstm')
+    
+    fullyConnectedLayer(numClasses, 'Name','fc')
+    softmaxLayer('Name','softmax')
+    classificationLayer('Name','classification')];
+clear inputSize numHiddenUnits numClasses
+
+%%
+lgraph = layerGraph(layers);
+lgraph = connectLayers(lgraph,'fold/miniBatchSize','unfold/miniBatchSize');
 
 %% THE OPTIONS ARE DIFINED
 maxEpochs = 3;
@@ -51,31 +67,19 @@ options = trainingOptions('adam', ...
     'MiniBatchSize',miniBatchSize, ...
     'Shuffle','never', ...
     'Verbose',0, ...
-    'ValidationData', validation_datastore, ...  
+    'ValidationData', validation_datastore, ...
+    'ValidationFrequency',50, ...
     'Plots','training-progress');
 clear maxEpochs miniBatchSize
 
 %%
-net = trainNetwork(training_datastore, layers, options);
+net = trainNetwork(training_datastore, lgraph, options);
 
 %%
 predict = read(testing_datastore);
 
 %%
 YPred = classify(net,predict.sequences);
-
-%% THE NETWORK ARCHITECTURE AND THE TRAINING PARAMETERS ARE ESTABLISHED
-layers = [
-    imageInputLayer(dimensions,"Name","imageinput","Normalization","none")
-    convolution2dLayer([2 2],10,"Name","conv_1","Padding","same")
-    reluLayer("Name","relu_1")
-    maxPooling2dLayer([2 2],"Name","maxpool_1","Padding","same","Stride",[10 10])
-    convolution2dLayer([2 2],10,"Name","conv_2","Padding","same")
-    reluLayer("Name","relu_2")
-    maxPooling2dLayer([2 2],"Name","maxpool_2","Padding","same","Stride",[10 10])
-    fullyConnectedLayer(6,"Name","fc")
-    softmaxLayer("Name","softmax")
-    classificationLayer("Name","classoutput")];
 
 %%
 
@@ -84,15 +88,6 @@ function [first_datstore, second_datastore] = divide_datastore(dataStore)
     % first_datstore(50%) && second_datastore(50%)
     first_datstore =  partition(dataStore,2,1);
     second_datastore = partition(dataStore,2,2);
-end
-
-%% FUNCTION TO GET THE INPUT DIMESIONS
-function dimensions = get_input_dimensons(datastore)
-    % Sample of data from the DataStore
-    table = preview(datastore);
-    structure = table{1,1};
-    sample_data = structure{1,1};
-    dimensions = [size(sample_data,1), size(sample_data,2),size(sample_data,3)];
 end
 
 %% FUNCTION TO SET THE AMOUNT OF DATA
@@ -105,3 +100,13 @@ function datastore = setDataAmount(datastore, data_amount)
     % NumObservations must be counted again
     reset(datastore);
 end
+%% ARQUITECTURAS PROVADAS
+%{
+layers = [ ...
+    sequenceInputLayer(dimensions)
+    flattenLayer
+    lstmLayer(numHiddenUnits,'OutputMode','sequence')
+    fullyConnectedLayer(numClasses)
+    softmaxLayer
+    classificationLayer];
+%}
