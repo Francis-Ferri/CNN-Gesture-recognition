@@ -24,7 +24,7 @@ users = users(randperm(length(users)));
 clear data_dir training_dir
 
 %%                      BORRAR ESTO AL ACABAR SOLO ES PARA HACER PRUEBAS CON PORCIONES
-users = users(1:3);
+users = users(1:1);
 
 %% THE STRUCTURE OF THE DATA STORE IS DEFINED
 labels = {'fist'; 'noGesture'; 'open'; 'pinch'; 'waveIn'; 'waveOut'};
@@ -34,7 +34,7 @@ validation_datastore = createDatastore('Datastores/validation_datastore', labels
 %% GENERATION OF SPECTROGRAMS TO CREATE THE MODEL
 for i = 1:length(users) % % parfor
     % Get user samples
-    [training_samples, validation_samples] = getTrainingTestingSamples(training_path, users(i));
+    [training_samples, validation_sTamples] = getTrainingTestingSamples(training_path, users(i));
     % Training data
     transformed_samples_training = generateData(training_samples);
     saveSampleInDatastore(transformed_samples_training, users(i), training_datastore);
@@ -42,7 +42,7 @@ for i = 1:length(users) % % parfor
     transformed_samples_validation = generateData(validation_samples);
     saveSampleInDatastore(transformed_samples_validation, users(i), validation_datastore);
 end
-clear labels i training_samples validation_samples transformed_samples_validation
+clear labels i validation_samples transformed_samples_validation
 
 %% GET TRAINING AND TESTING SAMPLES FOR AN USER
 function [trainingSamples, testingSamples] = getTrainingTestingSamples(path, user)
@@ -78,7 +78,7 @@ function transformed_samples = generateData(samples)
         signal = getSignal(emg);
         signal = preprocessSignal(signal);
         % Generate spectrograms
-        data = generateSpectrograms(signal, sample, gestureName);
+        [data] = generateSpectrograms(signal, sample, gestureName);
         % Adding the transformed data
         transformed_samples{i,1} = data;
         transformed_samples{i,2} = gestureName;
@@ -108,7 +108,7 @@ function signal = preprocessSignal(signal)
 end
 
 %% generateSpectrograms
-function data = generateSpectrograms(signal, sample, gestureName)
+function [data, groundTruth] = generateSpectrograms(signal, sample, gestureName)
     %{
         Consideraciones espectrogramas
             ventanas de 20, ventanas de 50 ventanas de 100
@@ -122,7 +122,13 @@ function data = generateSpectrograms(signal, sample, gestureName)
     % Number of frames
     total_frames = floor(length(signal) / FRAME_SIZE);
     % Allocate space for the results
-    data = cell(total_frames,2);
+    if isequal(gestureName,'noGesture')
+        data = cell(total_frames,3);
+    else
+        data = cell(total_frames,4);
+        groundTruth = sample.groundTruth;
+        data(:,4) = {0};
+    end
     % Initialize windowing parameters
     frame_idx = 1;
     position = 1;
@@ -135,15 +141,16 @@ function data = generateSpectrograms(signal, sample, gestureName)
                 FRAME_SIZE, 0, frecuencies, sample_frecuency, 'yaxis');
         end
         data{frame_idx,1} = abs(spectrograms); % datum
-        data{frame_idx,2} = gestureName; % label
+        data{frame_idx,2} = 'noGesture'; % label
+        data{frame_idx,3} = round(position + (FRAME_SIZE / 2)); % timepoint
         % Check no gesture and change label
-        if ~isequal(gestureName,'noGesture')
-            groundTruth = sample.groundTruth;
+        if ~isequal(gestureName,'noGesture')            
             frame_groundTruth = groundTruth(position : position + FRAME_SIZE - 1);
             total_zeros = sum(frame_groundTruth == 0);
             % More than half of window -> no gesture
-            if total_zeros > FRAME_SIZE/2
-                data{frame_idx,2} = 'noGesture'; % label
+            if total_zeros <= FRAME_SIZE/2
+                data{frame_idx,2} = gestureName; % label
+                data{frame_idx,4} = 1;
             end
         end
         position = position + FRAME_SIZE;
@@ -160,6 +167,8 @@ function saveSampleInDatastore(samples, user, data_store)
         file_name = strcat(strtrim(user),'_', int2str(i));
         % The folder corresponds to the class 
         save_path = fullfile(data_store, char(class),file_name);
-        save(save_path,'frames');
+        % Savind data
+        data.frames = frames;
+        save(save_path,'data');
     end
 end

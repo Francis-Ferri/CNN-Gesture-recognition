@@ -1,4 +1,6 @@
-%% THE TRAINING AND VALIDATION PATHS ARE DEFINED
+[t,info] = read(training_datastore);
+
+%%
 data_dir_training = fullfile('Datastores', 'training_datastore');
 data_dir_validation = fullfile('Datastores', 'validation_datastore');
 
@@ -85,6 +87,56 @@ clear maxEpochs miniBatchSize
 net = trainNetwork(training_datastore, lgraph, options);
 clear options 
 
+
+%% CALCULATE ACCURACIES
+reset(testing_datastore)
+% Allocate space to save the results
+data_clasification = zeros(testing_datastore.NumObservations, 1);
+data_prediction = zeros(testing_datastore.NumObservations, 1);
+%procesing_time = zeros(testing_datastore.NumObservations, 1);
+idx = 1;
+while(hasdata(testing_datastore))
+    [data, info] = read(testing_datastore);
+    labels = info.labels;
+    groundTruths = info.groundTruths;
+    time_point_sequences = info.time_point_sequences;
+    for i = 1:testing_datastore.MiniBatchSize
+        gestureName = labels{i};
+      
+        % Original information
+        repInfo.gestureName = gestureName;
+        if ~isequal(gestureName,'noGesture')
+                repInfo.groundTruth = info.groundTruths{i};
+        end
+        yReal = data.label_sequences(i);
+        timer = tic;
+        yPred = classify(net,data.sequences(i));
+        time = toc(timer);
+        nFrames = length(yPred{1});
+        time_frame = time / nFrames;
+        % Prediction information
+        response.vectorOfLabels = yPred{1};
+        response.vectorOfTimePoints = time_point_sequences{i};
+        response.vectorOfProcessingTimes = time_frame*ones(1,nFrames);
+        %class
+        gestures = categorical({'fist'; 'noGesture'; 'open'; 'pinch'; 'waveIn'; 'waveOut'});
+        cat_counts = countcats(yPred{1});
+        [cat_counts,indexes] = sort(cat_counts,'descend');
+        new_categories = gestures(indexes);
+        if cat_counts(2) >= 4
+           class = new_categories(2);
+        else
+           class = gestures(2);
+        end
+        response.class = class;
+
+        %r1 = evalRecognition(repInfo, response)
+    end
+    
+end
+%%
+r1 = evalRecognition(repInfo, response)
+
 %% CALCULATE ACCURACIES
 training_acc = calculateAccuracy(net,training_datastore);
 validation_acc = calculateAccuracy(net, validation_datastore);
@@ -98,7 +150,10 @@ fprintf('\n%s\n%s\n%s\n',text_training_acc, text_validation_acc, text_testing_ac
 clear text_training_acc text_validation_acc text_testing_acc
 
 %% PLOT PREDICCTION/REAL SAMPLE FROM DATASET
-plotPredictionDatastore(net, testing_datastore, 100);
+plotPredictionDatastore(net, testing_datastore, 2);
+
+%%
+[t,info] = read(testing_datastore);
 
 %% FUNCTION TO DIVIDE DATASTORE IN TWO HALVES
 function [first_datstore, second_datastore] = divide_datastore(dataStore)
@@ -135,7 +190,7 @@ function acc = calculateAccuracy(net, datastore)
     reset(datastore);
 end
 
-%% 
+%% FUNCTION TO PLOT A COMPARISON (REAL/PREDICTED) OF A SAMPLE FROM DATASTORE
 function plotPredictionDatastore(net, datastore, idx)
     reset(datastore)
     % Validate number of sample
@@ -155,7 +210,7 @@ function plotPredictionDatastore(net, datastore, idx)
     reset(datastore)
 end
 
-%%  
+%% FUNCTION TO PLOT A COMPARISON (REAL/PREDICTED)
 function plotPredictionComparison(YTest, YPred)
     figure
     plot(YPred,'.-')
@@ -166,6 +221,20 @@ function plotPredictionComparison(YTest, YPred)
     ylabel("Gesture")
     title("Predicted Gestures")
     legend(["Predicted" "Test Data"])
+end
+
+%%
+function calculateClassificationAccuracy(datastore)
+    while(hasdata(datastore))
+        [data,info] = read(datastore);
+        sequences_pred = classify(net,data.sequences);
+        
+        yReal = info.label;
+        for i = 1:length(yReal)
+            data_similarity(idx) = sum(sequences_pred{i} == yReal{i})./numel(yReal{i});
+            idx = idx + 1;
+        end
+    end
 end
 
 %% ARQUITECTURAS PROVADAS
