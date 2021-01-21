@@ -13,65 +13,65 @@ SPECTROGRAM DATASET GENERATION
 %}
 
 %% DEFINE THE DIRECTORIES WHERE THE DATA WILL BE FOUND
-data_dir = 'EMG_EPN612_Dataset';
-training_dir = 'trainingJSON';
+dataDir = 'EMG_EPN612_Dataset';
+trainingDir = 'trainingJSON';
 
 %% GET THE TRAINING DIRECTORIES
-training_path = fullfile(data_dir, training_dir);
-users = ls(training_path);
+trainingPath = fullfile(dataDir, trainingDir);
+users = ls(trainingPath);
 users = strtrim(string(users(3:length(users),:)));
 users = users(randperm(length(users)));
-clear data_dir training_dir
+clear data_dir trainingDir
 
 %%                      BORRAR ESTO AL ACABAR SOLO ES PARA HACER PRUEBAS CON PORCIONES
 users = users(1:1);
 
 %% THE STRUCTURE OF THE DATA STORE IS DEFINED
 labels = {'fist'; 'noGesture'; 'open'; 'pinch'; 'waveIn'; 'waveOut'};
-training_datastore = createDatastore('Datastores/training_datastore', labels);
-validation_datastore = createDatastore('Datastores/validation_datastore', labels);
+trainingDatastore = createDatastore('Datastores/trainingDatastore', labels);
+validationDatastore = createDatastore('Datastores/validationDatastore', labels);
 
 %% GENERATION OF SPECTROGRAMS TO CREATE THE MODEL
 for i = 1:length(users) % % parfor
     % Get user samples
-    [training_samples, validation_sTamples] = getTrainingTestingSamples(training_path, users(i));
+    [trainingSamples, validationSamples] = getTrainingTestingSamples(trainingPath, users(i));
     % Training data
-    transformed_samples_training = generateData(training_samples);
-    saveSampleInDatastore(transformed_samples_training, users(i), training_datastore);
-    % validation data
-    transformed_samples_validation = generateData(validation_samples);
-    saveSampleInDatastore(transformed_samples_validation, users(i), validation_datastore);
+    transformedSamplesTraining = generateData(trainingSamples);
+    saveSampleInDatastore(transformedSamplesTraining, users(i), trainingDatastore);
+    % Validation data
+    transformedSamplesValidation = generateData(validationSamples);
+    saveSampleInDatastore(transformedSamplesValidation, users(i), validationDatastore);
 end
-clear labels i validation_samples transformed_samples_validation
+clear labels i validationSamples transformedSamplesValidation
 
 %% GET TRAINING AND TESTING SAMPLES FOR AN USER
 function [trainingSamples, testingSamples] = getTrainingTestingSamples(path, user)
-    file_path = fullfile(path, user, strcat(user, '.json'));
-    json_file = fileread(file_path);
-    json_data = jsondecode(json_file);
+    filePath = fullfile(path, user, strcat(user, '.json'));
+    jsonFile = fileread(filePath);
+    jsonData = jsondecode(jsonFile);
     % Extract samples
-    trainingSamples = json_data.trainingSamples;
-    testingSamples = json_data.testingSamples;
+    trainingSamples = jsonData.trainingSamples;
+    testingSamples = jsonData.testingSamples;
 end
 
 %% FUNCTION TO CREATE DATASTORE
-function data_store = createDatastore(data_store, labels)
-    mkdir(data_store);
+function datastore = createDatastore(datastore, labels)
+    mkdir(datastore);
     % One folder is created for each class
     for i = 1:length(labels)
-        mkdir(fullfile(data_store, char(labels(i))));
+        mkdir(fullfile(datastore, char(labels(i))));
     end
 end
 
 %% CREAR DATOS DE ESPECTROGRAMAS
-function transformed_samples = generateData(samples)
+function transformedSamples = generateData(samples)
     % Get sample keys
-    samples_keys = fieldnames(samples);
+    samplesKeys = fieldnames(samples);
     % Allocate space for the results
-    transformed_samples = cell(length(samples_keys), 2);
-    for i = 1: length(samples_keys)
+    transformedSamples = cell(length(samplesKeys), 3);
+    for i = 1: length(samplesKeys)
         % Get sample
-        sample = samples.(samples_keys{i});
+        sample = samples.(samplesKeys{i});
         emg = sample.emg;
         gestureName = sample.gestureName;
         % Get signal from sample
@@ -80,15 +80,19 @@ function transformed_samples = generateData(samples)
         % Generate spectrograms
         [data] = generateSpectrograms(signal, sample, gestureName);
         % Adding the transformed data
-        transformed_samples{i,1} = data;
-        transformed_samples{i,2} = gestureName;
+        transformedSamples{i,1} = data;
+        transformedSamples{i,2} = gestureName;
+        if ~isequal(gestureName,'noGesture')
+            groundTruth = sample.groundTruth;
+            transformedSamples{i,3} = transpose(groundTruth);
+        end
     end
 end
 
 %% FUNCTION TO GET THE EMG SIGNAL
 function signal = getSignal(emg)
     chanels = fieldnames(emg); % get chanels
-    signal = zeros(length(emg.(chanels{1})), length(chanels)); % Ex: 1000 x 8
+    signal = zeros(length(emg.(chanels{1})), length(chanels)); % ex: 1000 x 8
     for j = 1:length(chanels)
         signal(:,j) = emg.(chanels{j});
     end
@@ -108,53 +112,47 @@ function signal = preprocessSignal(signal)
 end
 
 %% generateSpectrograms
-function [data, groundTruth] = generateSpectrograms(signal, sample, gestureName)
+function [data] = generateSpectrograms(signal, sample,gestureName)
     %{
         Consideraciones espectrogramas
             ventanas de 20, ventanas de 50 ventanas de 100
             No sacar directamente espectrogras, si no el logaritmo de la 
             transformada de FOurier al cuadrado como en speech recognition
     %}
-    FRAME_SIZE = 20;
     % Spectrogram parameters
     frecuencies = 1:1:100;
-    sample_frecuency = 200;
+    sampleFrecuency = 200;
     % Number of frames
-    total_frames = floor(length(signal) / FRAME_SIZE);
+    frameSize = 20;
+    totalFrames = floor(length(signal) / frameSize);
     % Allocate space for the results
-    if isequal(gestureName,'noGesture')
-        data = cell(total_frames,3);
-    else
-        data = cell(total_frames,4);
-        groundTruth = sample.groundTruth;
-        data(:,4) = {0};
-    end
+    data = cell(totalFrames,3);
     % Initialize windowing parameters
-    frame_idx = 1;
+    frameIdx = 1;
     position = 1;
     % Allocate space for the spectrograms
     spectrograms = zeros(size(frecuencies,2), size(signal,2)); % 100 x 8
-    while frame_idx <= total_frames
+    while frameIdx <= totalFrames
         % Spectrogram for each channel
         for j = 1:size(signal,2)
-            spectrograms(:,j) = spectrogram(signal(position:(position + FRAME_SIZE - 1), j), ...
-                FRAME_SIZE, 0, frecuencies, sample_frecuency, 'yaxis');
+            spectrograms(:,j) = spectrogram(signal(position:(position + frameSize - 1), j), ...
+                frameSize, 0, frecuencies, sampleFrecuency, 'yaxis');
         end
-        data{frame_idx,1} = abs(spectrograms); % datum
-        data{frame_idx,2} = 'noGesture'; % label
-        data{frame_idx,3} = round(position + (FRAME_SIZE / 2)); % timepoint
+        data{frameIdx,1} = abs(spectrograms); % datum
+        data{frameIdx,2} = 'noGesture'; % label
+        data{frameIdx,3} = round(position + (frameSize / 2)); % timepoint
         % Check no gesture and change label
-        if ~isequal(gestureName,'noGesture')            
-            frame_groundTruth = groundTruth(position : position + FRAME_SIZE - 1);
-            total_zeros = sum(frame_groundTruth == 0);
+        if ~isequal(gestureName,'noGesture')
+            groundTruth = sample.groundTruth;
+            frameGroundTruth = groundTruth(position : position + frameSize - 1);
+            totalZeros = sum(frameGroundTruth == 0);
             % More than half of window -> no gesture
-            if total_zeros <= FRAME_SIZE/2
-                data{frame_idx,2} = gestureName; % label
-                data{frame_idx,4} = 1;
+            if totalZeros <= frameSize/2
+                data{frameIdx, 2} = gestureName; % label
             end
         end
-        position = position + FRAME_SIZE;
-        frame_idx = frame_idx + 1;
+        position = position + frameSize;
+        frameIdx = frameIdx + 1;
     end
 end
 
@@ -164,11 +162,14 @@ function saveSampleInDatastore(samples, user, data_store)
         frames = samples{i,1};
         class = samples{i,2};
         % The name to save is (user_sample index)
-        file_name = strcat(strtrim(user),'_', int2str(i));
+        fileName = strcat(strtrim(user),'_', int2str(i));
         % The folder corresponds to the class 
-        save_path = fullfile(data_store, char(class),file_name);
+        savePath = fullfile(data_store, char(class),fileName);
         % Savind data
         data.frames = frames;
-        save(save_path,'data');
+        if ~isequal(class,'noGesture')
+            data.groundTruth = samples{i,3};
+        end
+        save(savePath,'data');
     end
 end

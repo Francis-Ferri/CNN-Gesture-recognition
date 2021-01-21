@@ -64,73 +64,63 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
         end
         
         function [data,info] = read(ds)            
-            % Funcion para leer datos
+            % Function to read data
             miniBatchSize = ds.MiniBatchSize;
             predictors = cell(miniBatchSize, 1);
             responses = cell(miniBatchSize, 1);
-            % Se leen los datos para el tamaño del minibatch
+            groundTruths = cell(miniBatchSize, 1);
+            % Data for minibatch size is read
             for i = 1:miniBatchSize
                 data = read(ds.Datastore).data;
                 predictors{i,1} = data.frames;
                 class = ds.Labels(ds.CurrentFileIndex);
                 responses{i,1} = class;
+                if ~isequal(class,'noGesture')
+                    groundTruths{i,1} = data.groundTruth;
+                end
                 ds.CurrentFileIndex = ds.CurrentFileIndex + 1;
             end
-            % Se preprocesan los datos
+            % Data is preprocessed
             info.labels = responses;
-            [data, time_point_sequences, groundTruths] = preprocessData(ds, predictors, responses);
-            info.time_point_sequences = time_point_sequences;
+            [data, timePointSequences] = preprocessData(ds, predictors);
+            info.timePointSequences = timePointSequences;
             info.groundTruths = groundTruths;
         end
         
-        function [data, timepoint_sequences, groundTruths] = preprocessData(ds,predictors, responses)
+        function [data, timepointSequences] = preprocessData(ds,predictors)
+            % Function to preprocess data
             miniBatchSize = ds.MiniBatchSize;
             frameSize = ds.FrameSize;
             sequences = cell(miniBatchSize, 1);
-            label_sequences = cell(miniBatchSize, 1);
-            timepoint_sequences = cell(miniBatchSize, 1);
-            groundTruths = cell(miniBatchSize, 1);
+            labelSequences = cell(miniBatchSize, 1);
+            timepointSequences = cell(miniBatchSize, 1);
             % Calculate maximum length of sequences
-            predictors_lengths = cellfun(@(predictor) length(predictor), predictors);
-            max_length = max(predictors_lengths);
-            % Creating data
+            predictorsLengths = cellfun(@(predictor) length(predictor), predictors);
+            maxLength = max(predictorsLengths);
+            % Create data
             parfor i = 1:miniBatchSize
-                num_frames = length(predictors{i});
-                sequence = zeros(size(predictors{i}{1},1), size(predictors{i}{1},2), 1, max_length);
-                sequence_labels  = cell(1, max_length);
-                sequence_timepoints = zeros(1, max_length);
-                groundTruth = zeros(1, max_length);
-                for j = 1:num_frames
+                numFrames = length(predictors{i});
+                sequence = zeros(size(predictors{i}{1},1), size(predictors{i}{1},2), 1, maxLength);
+                sequenceLabels  = cell(1, maxLength);
+                sequenceTimepoints = zeros(1, maxLength);
+                for j = 1:numFrames
                     sequence(:,:,j) = predictors{i}{j,1};
-                    sequence_labels{1, j} = predictors{i}{j,2};
-                    sequence_timepoints(j) = predictors{i}{j,3};
-                end
-                if ~isequal(responses{i},'noGesture')
-                    for j = 1:num_frames
-                        groundTruth(j) = predictors{i}{j,4};
-                    end
+                    sequenceLabels{1, j} = predictors{i}{j,2};
+                    sequenceTimepoints(j) = predictors{i}{j,3};
                 end
                 timepoint = predictors{i}{j,3};
-                for j = 1:(max_length - num_frames)
-                    sequence_labels{1, num_frames + j} = 'noGesture';
+                for j = 1:(maxLength - numFrames)
+                    sequenceLabels{1, numFrames + j} = 'noGesture';
                     timepoint = timepoint + frameSize;
-                    sequence_timepoints(num_frames + j) = timepoint;
-                end
-                if ~isequal(responses{i},'noGesture')
-                    for j = 1:(max_length - num_frames)
-                        groundTruth(num_frames + j) = 0;
-                    end
+                    sequenceTimepoints(numFrames + j) = timepoint;
                 end
                 sequences{i,1} = sequence;
-                label_sequences{i,1} = categorical(sequence_labels, {'fist', 'noGesture', 'open', ... 
+                labelSequences{i,1} = categorical(sequenceLabels, {'fist', 'noGesture', 'open', ... 
                 'pinch','waveIn', 'waveOut'});
-                timepoint_sequences{i,1} = sequence_timepoints;
-                if ~isequal(responses{i},'noGesture')
-                    groundTruths{i,1} = groundTruth;
-                end
+                timepointSequences{i,1} = sequenceTimepoints;
             end
-            % En este caso enviams los datos en forma de tabla
-            data = table(sequences,label_sequences);
+            % Put the data in table form
+            data = table(sequences,labelSequences);
         end
         
         function reset(ds)
@@ -141,6 +131,7 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
         end
         
         function subds = partition(myds,n,ii)
+            % Particionate the datastore
             subds = copy(myds);
             subds.Datastore = partition(subds.Datastore,n,ii);
             numObservations = numel(subds.Datastore.Files);
@@ -165,6 +156,7 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
         end
         
         function ds = order(ds)
+            % Order the datasroes by number of frames
             numObservations = numel(ds.Labels);
             sequenceLengths = zeros(numObservations, 1);
             files =  ds.Datastore.Files;
@@ -218,6 +210,7 @@ function labels = createLabels(files)
 end
 
 function data = readSequence(filename)
+    % Load a Matlab file
     data = load(filename);
 end
 
