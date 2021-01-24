@@ -37,10 +37,10 @@ for i = 1:length(users) % % parfor
     [trainingSamples, validationSamples] = getTrainingTestingSamples(trainingPath, users(i));
     % Training data
     transformedSamplesTraining = generateData(trainingSamples);
-    saveSampleInDatastore(transformedSamplesTraining, users(i), trainingDatastore);
+    %saveSampleInDatastore(transformedSamplesTraining, users(i), trainingDatastore);
     % Validation data
-    transformedSamplesValidation = generateData(validationSamples);
-    saveSampleInDatastore(transformedSamplesValidation, users(i), validationDatastore);
+    %transformedSamplesValidation = generateData(validationSamples);
+    %saveSampleInDatastore(transformedSamplesValidation, users(i), validationDatastore);
 end
 clear labels i validationSamples transformedSamplesValidation
 
@@ -70,15 +70,20 @@ function transformedSamples = generateData(samples)
     % Allocate space for the results
     transformedSamples = cell(length(samplesKeys), 3);
     for i = 1: length(samplesKeys)
-        % Get sample
+        % Get sample data
         sample = samples.(samplesKeys{i});
         emg = sample.emg;
         gestureName = sample.gestureName;
+        if isequal(gestureName,'noGesture')  
+            groundTruth = [];
+        else
+            groundTruth = sample.groundTruth;
+        end
         % Get signal from sample
         signal = getSignal(emg);
         signal = preprocessSignal(signal);
         % Generate spectrograms
-        [data] = generateSpectrograms(signal, sample, gestureName);
+        [data] = generateFrames(signal, groundTruth, gestureName);
         % Adding the transformed data
         transformedSamples{i,1} = data;
         transformedSamples{i,2} = gestureName;
@@ -112,8 +117,42 @@ function signal = preprocessSignal(signal)
 end
 
 %% generateSpectrograms
-function [data] = generateSpectrograms(signal, sample,gestureName)
-    %{
+function [data] = generateFrames(signal, groundTruth, gestureName)
+    % Creating spectrograms
+    [spectrograms, params] = generateSpectrograms(signal); % 100 x n x 8
+    % Creating frames
+    NUMCOLSFRAME = 10;
+    numFrames = floor(params.numCols / NUMCOLSFRAME);
+    realShift = params.window - params.overlappimg;
+    % Allocate space for the results
+    data = cell(numFrames,3);
+    for i = 1:numFrames
+        % start and finish colums in spectrogram
+        firstCol = ((i - 1) * NUMCOLSFRAME) + 1;
+        lastCol = NUMCOLSFRAME * i;
+         % Start and finish points in sample
+        firstPoint = ((i - 1) * NUMCOLSFRAME * realShift) + 1;
+        lastPoint = lastCol * (realShift);
+        % Save data
+        data{i,1} = spectrograms(:, firstCol:lastCol, :); % datum
+        data{i,2} = 'noGesture'; % label
+        data{i,3} = floor((firstPoint + lastPoint) / 2); % timepoint
+        % Check no gesture and change label
+        if ~isequal(gestureName,'noGesture')
+            frameGroundTruth = groundTruth(firstPoint:lastPoint);
+            totalZeros = sum(frameGroundTruth == 0);
+            % More than half of window -> no gesture
+            if totalZeros <= (NUMCOLSFRAME * realShift)/2 % No creo QUE SEA ASI AQUI 
+                data{i, 2} = gestureName; % label
+            end
+        end    
+    end  
+end
+
+%% FUNCTION TO GENERATE SPECTROGRAMS
+function [spectrograms, params] = generateSpectrograms(signal)
+ %{
+generateSpectrograms
         Consideraciones espectrogramas
             ventanas de 20, ventanas de 50 ventanas de 100
             No sacar directamente espectrogras, si no el logaritmo de la 
@@ -122,38 +161,22 @@ function [data] = generateSpectrograms(signal, sample,gestureName)
     % Spectrogram parameters
     frecuencies = 1:1:100;
     sampleFrecuency = 200;
-    % Number of frames
-    frameSize = 20;
-    totalFrames = floor(length(signal) / frameSize);
-    % Allocate space for the results
-    data = cell(totalFrames,3);
-    % Initialize windowing parameters
-    frameIdx = 1;
-    position = 1;
+    WINDOW = 5;
+    OVERLAPPING = 0; %floor(window*0.5);
     % Allocate space for the spectrograms
-    spectrograms = zeros(size(frecuencies,2), size(signal,2)); % 100 x 8
-    while frameIdx <= totalFrames
-        % Spectrogram for each channel
-        for j = 1:size(signal,2)
-            spectrograms(:,j) = spectrogram(signal(position:(position + frameSize - 1), j), ...
-                frameSize, 0, frecuencies, sampleFrecuency, 'yaxis');
-        end
-        data{frameIdx,1} = abs(spectrograms); % datum
-        data{frameIdx,2} = 'noGesture'; % label
-        data{frameIdx,3} = round(position + (frameSize / 2)); % timepoint
-        % Check no gesture and change label
-        if ~isequal(gestureName,'noGesture')
-            groundTruth = sample.groundTruth;
-            frameGroundTruth = groundTruth(position : position + frameSize - 1);
-            totalZeros = sum(frameGroundTruth == 0);
-            % More than half of window -> no gesture
-            if totalZeros <= frameSize/2
-                data{frameIdx, 2} = gestureName; % label
-            end
-        end
-        position = position + frameSize;
-        frameIdx = frameIdx + 1;
+    numCols = floor((length(signal)-OVERLAPPING)/(WINDOW-OVERLAPPING));
+    spectrograms = zeros(100, numCols, 8);
+    % Spectrograms generation
+    for i = 1:8
+        spectrograms(:,:,i) = spectrogram(signal(:,i), WINDOW, OVERLAPPING, frecuencies, sampleFrecuency, 'yaxis');
     end
+    % Get the spectrogram real part
+    %spectrograms = abs(spectrograms);
+    spectrograms = real(spectrograms);
+    % Put parameters in structure
+    params.numCols = numCols;
+    params.window = WINDOW;
+    params.overlappimg = OVERLAPPING;
 end
 
 %% FUNCTION TO SAVE SPECTROGRAMS IN DATASTORE
@@ -173,3 +196,32 @@ function saveSampleInDatastore(samples, user, data_store)
         save(savePath,'data');
     end
 end
+
+%{
+%% CREAR DATOS DE ESPECTROGRAMAS
+function transformedSamples = generateData(samples)
+    % Get sample keys
+    samplesKeys = fieldnames(samples);
+    % Allocate space for the results
+    transformedSamples = cell(length(samplesKeys), 3);
+    for i = 1: length(samplesKeys)
+        % Get sample
+        sample = samples.(samplesKeys{i});
+        emg = sample.emg;
+        gestureName = sample.gestureName;
+        % Get signal from sample
+        signal = getSignal(emg);
+        signal = preprocessSignal(signal);
+        % Generate spectrograms
+        [data] = generateSpectrograms(signal, sample, gestureName);
+        % Adding the transformed data
+        transformedSamples{i,1} = data;
+        transformedSamples{i,2} = gestureName;
+        if ~isequal(gestureName,'noGesture')
+            groundTruth = sample.groundTruth;
+            transformedSamples{i,3} = transpose(groundTruth);
+        end
+    end
+end
+
+%}
