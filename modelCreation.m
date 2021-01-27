@@ -34,40 +34,27 @@ fprintf('\n%s\n%s\n%s\n', numTrainingSamples, numValidationSamples, numTestingSa
 clear numTrainingSamples numValidationSamples numTestingSamples
 
 %% THE NEURAL NETWORK ARCHITECTURE IS DEFINED
-numHiddenUnits = 200;
 filterSize = 2;
 numFilters = 20;
 numClasses = length(classes);
 layers = [ ...
-    sequenceInputLayer(inputSize,'Name','input')
-    
-    sequenceFoldingLayer('Name','fold')
-    
-    convolution2dLayer(filterSize,numFilters,'Name','conv') 
+    imageInputLayer(inputSize, 'Name','input')
+    convolution2dLayer(filterSize,numFilters,'Name','conv', 'Padding','same') 
     batchNormalizationLayer('Name','bn')
     reluLayer('Name','relu')
     maxPooling2dLayer([2 2],"Name","maxpool")
     
     dropoutLayer(0.2,"Name","drop")
     
-    convolution2dLayer(filterSize,2*numFilters,'Name','conv_1') 
+    convolution2dLayer(filterSize,2*numFilters,'Name','conv_1', 'Padding','same') 
     batchNormalizationLayer('Name','bn_1')
     reluLayer('Name','relu_1')
     
-    sequenceUnfoldingLayer('Name','unfold')
-    flattenLayer('Name','flatten')
-    
-    lstmLayer(numHiddenUnits,'OutputMode','sequence','Name','lstm')
     
     fullyConnectedLayer(numClasses, 'Name','fc')
     softmaxLayer('Name','softmax')
     classificationLayer('Name','classification')];
 clear inputSize numHiddenUnits filterSize numFilters numClasses
-
-%% LINK FOLD AND UNFOLD LAYERS
-lgraph = layerGraph(layers);
-lgraph = connectLayers(lgraph,'fold/miniBatchSize','unfold/miniBatchSize');
-clear layers
 
 %% THE OPTIONS ARE DIFINED
 maxEpochs = 1;
@@ -90,20 +77,25 @@ options = trainingOptions('adam', ...
 clear maxEpochs miniBatchSize
 
 %% NETWORK TRAINING
-net = trainNetwork(trainingDatastore, lgraph, options);
+net = trainNetwork(trainingDatastore, layers, options);
 clear options 
+
+%% EVALUATING DATA
+dataDirTrainingEval = fullfile('Datastores', 'trainingEvalDatastore');
+trainingEvalDatastore = SpectrogramDatastoreEval(dataDirTrainingEval);
+dataDirValidationEval = fullfile('Datastores', 'validationEvalDatastore');
+validationEvalDatastore = SpectrogramDatastoreEval(dataDirValidationEval);
+clear dataDirEvaluation
 
 %% CALCULATE ACCURACIES
 fprintf('\nRESULTS\n');
 disp('Training results');
-evaluateDataStore(net, validationDatastore);
+evaluateDataStore(net, trainingEvalDatastore);
 disp('Validation results');
-evaluateDataStore(net, validationDatastore);
-disp('Testing results');
-evaluateDataStore(net, testingDatastore);
+evaluateDataStore(net, validationEvalDatastore);
 
 %% PLOT PREDICCTION/REAL SAMPLE FROM DATASET
-plotPredictionDatastore(net, testingDatastore, 2);
+plotPredictionDatastore(net, trainingEvalDatastore, 2);
 
 %% FUNCTION TO DIVIDE DATASTORE IN TWO HALVES
 function [firstDatstore, secondDatastore] = divideDatastore(dataStore)
@@ -137,14 +129,25 @@ function plotPredictionDatastore(net, datastore, idx)
         count = count + batch_size;
     end
     idx = idx - (count - batch_size);
-    yPred = classify(net,data.sequences{idx});
+    sequence = data.sequences{idx};
+    numFrames = length(sequence);
+    vectorOfLabels = cell (1, numFrames);
+    for i = 1:numFrames
+        frame = sequence{i,1};
+        yPred = classify(net,frame);
+        vectorOfLabels{1, i} = char(yPred);
+    end
     yReal = data.labelSequences{idx};
-    plotPredictionComparison(yReal, yPred);
+    plotPredictionComparison(yReal, vectorOfLabels);
     reset(datastore);
 end
 
 %% FUNCTION TO PLOT A COMPARISON (REAL/PREDICTED)
 function plotPredictionComparison(YTest, YPred)
+    % Make the lavels categorical
+    gestures = {'fist', 'noGesture', 'open', 'pinch', 'waveIn', 'waveOut'};
+    YPred = categorical(YPred,gestures);
+    % Plot comparison
     figure
     plot(YPred,'.-')
     hold on
@@ -176,18 +179,26 @@ function evaluateDataStore(net, datastore)
             if ~isequal(gestureName,'noGesture')
                 repInfo.groundTruth = groundTruths{i};
             end
+            % Allocate space for the results
+            sequence = data.sequences{i};
+            numFrames = length(sequence);
+            vectorOfLabels = cell (1, numFrames);
+            vectorOfProcessingTimes = zeros(1,numFrames);
             % Predict and calculate time
-            timer = tic;
-            yPred = classify(net,data.sequences(i));
-            time = toc(timer);
+            for j = 1:numFrames
+                frame = sequence{j,1};
+                timer = tic;
+                yPred = classify(net,frame);
+                time = toc(timer);
+                vectorOfLabels{1, j} = char(yPred);
+                vectorOfProcessingTimes(1, j) = time;
+            end
             % Classify prediction
-            class = classifyPredictions(yPred{1});
+            [class, vectorOfLabels] = classifyPredictions(vectorOfLabels);
             % Predicteed information
-            response.vectorOfLabels = yPred{1};
+            response.vectorOfLabels = vectorOfLabels;
             response.vectorOfTimePoints = timepointSequences{i};
-            nFrames = length(yPred{1});
-            time_frame = time / nFrames;
-            response.vectorOfProcessingTimes = time_frame*ones(1,nFrames);
+            response.vectorOfProcessingTimes = vectorOfProcessingTimes;
             response.class = class;
             % Evaluate
             result = evalRecognition(repInfo, response);
@@ -214,15 +225,17 @@ function [clasifications, predictions, overlapings, procesingTimes] = preallocat
 end
 
 %% FUNCTION TO CLASSIFY PREDICTIONS
-function class = classifyPredictions(yPred)
-    gestures = categorical({'fist'; 'noGesture'; 'open'; 'pinch'; 'waveIn'; 'waveOut'});
+function [class, yPred] = classifyPredictions(yPred)
+    gestures = {'fist', 'noGesture', 'open', 'pinch', 'waveIn', 'waveOut'};
+    yPred = categorical(yPred,gestures);
+    categories = categorical(gestures);
     catCounts = countcats(yPred);
     [catCounts,indexes] = sort(catCounts,'descend');
-    newCategories = gestures(indexes);
+    newCategories = categories(indexes);
     if catCounts(2) >= 4
        class = newCategories(2);
     else
-       class = gestures(2);
+       class = categories(2);
     end
 end
 
@@ -239,114 +252,3 @@ function calculateValidationResults(clasifications, predictions, procesingTimes,
     fprintf('Avegage procesing time: %f\n',avgProcesing_time);
     fprintf('Avegage overlaping factor: %f\n\n',avgOverlapingFactor);
 end
-
-%% ARQUITECTURAS PROVADAS
-%{
-layers = [ ...
-    sequenceInputLayer(dimensions)
-    flattenLayer
-    lstmLayer(numHiddenUnits,'OutputMode','sequence')
-    fullyConnectedLayer(numClasses)
-    softmaxLayer
-    classificationLayer];
-%}
-%{
-convolution2dLayer(filterSize,numFilters,'Name','conv_1') 
-    batchNormalizationLayer('Name','bn_1')
-    reluLayer('Name','relu_1')
-    maxPooling2dLayer([2 2],"Name","maxpool_1")
-%}
-%{
-layers = [ ...
-    sequenceInputLayer(inputSize,'Name','input')
-    
-    sequenceFoldingLayer('Name','fold')
-    
-    convolution2dLayer(filterSize,numFilters,'Name','conv')
-    batchNormalizationLayer('Name','bn')
-    reluLayer('Name','relu')
-    %
-    maxPooling2dLayer([2 2],"Name","maxpool")
-    
-    dropoutLayer(0.2,"Name","drop")
-    
-    convolution2dLayer(filterSize,2*numFilters,'Name','conv_1') 
-    batchNormalizationLayer('Name','bn_1')
-    reluLayer('Name','relu_1')
-    maxPooling2dLayer([2 2],"Name","maxpool_1")
-    
-    %
-    
-    sequenceUnfoldingLayer('Name','unfold')
-    flattenLayer('Name','flatten')
-    
-    lstmLayer(numHiddenUnits,'OutputMode','sequence','Name','lstm')
-    
-    fullyConnectedLayer(numClasses, 'Name','fc')
-    softmaxLayer('Name','softmax')
-    classificationLayer('Name','classification')];
-%}
-%{
-    function calculateClassificationAccuracy(datastore)
-        while(hasdata(datastore))
-            [data,info] = read(datastore);
-            sequences_pred = classify(net,data.sequences);
-
-            yReal = info.label;
-            for i = 1:length(yReal)
-                data_similarity(idx) = sum(sequences_pred{i} == yReal{i})./numel(yReal{i});
-                idx = idx + 1;
-            end
-        end
-    end
-%}
-%{
-    %% CALCULATE ACCURACIES
-    training_acc = calculateAccuracy(net,trainingDatastore);
-    validation_acc = calculateAccuracy(net, validationDatastore);
-    testing_acc = calculateAccuracy(net, testingDatastore);
-    % Print accuracies
-    text_training_acc = ['Training samples: ', num2str(training_acc)];
-    text_validation_acc = ['Validation samples: ', num2str(validation_acc)];
-    text_testing_acc = ['Testing samples: ', num2str(testing_acc)];
-    % The amount of training-validation-tests data is printed
-    fprintf('\n%s\n%s\n%s\n',text_training_acc, text_validation_acc, text_testing_acc);
-    clear text_training_acc text_validation_acc text_testing_acc
-%}
-%{
-    %% FUNCTION TO CALCULATE ACCURACY
-    function acc = calculateAccuracy(net, datastore)
-        data_similarity = zeros(datastore.NumObservations, 1);
-        idx = 1;
-        while(hasdata(datastore))
-            data = read(datastore);
-            yPred = classify(net,data.sequences);
-            yReal = data.label_sequences;
-            for i = 1:length(yReal)
-                data_similarity(idx) = sum(yPred{i} == yReal{i})./numel(yReal{i});
-                idx = idx + 1;
-            end
-        end
-        acc = mean(data_similarity);
-        reset(datastore);
-    end
-%}
-%{
-    layers = [ ...
-        sequenceInputLayer(inputSize,'Name','input')
-
-        sequenceFoldingLayer('Name','fold')
-
-        convolution2dLayer(filterSize,numFilters,'Name','conv')
-        batchNormalizationLayer('Name','bn')
-        reluLayer('Name','relu')
-
-        sequenceUnfoldingLayer('Name','unfold')
-        flattenLayer('Name','flatten')
-
-        lstmLayer(numHiddenUnits,'OutputMode','sequence','Name','lstm')
-
-        fullyConnectedLayer(numClasses, 'Name','fc')
-        softmaxLayer('Name','softmax')
-        classificationLayer('Name','classification')];
-%}

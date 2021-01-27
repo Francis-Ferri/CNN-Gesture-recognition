@@ -8,7 +8,7 @@ CUSTOM MINIBATCH SPECTROGRAM DATASTORE
     6. Add support to partitions
 %}
 
-classdef SpectrogramDatastore < matlab.io.Datastore & ...
+classdef SpectrogramDatastoreEval < matlab.io.Datastore & ...
                                 matlab.io.datastore.MiniBatchable & ...
                                 matlab.io.datastore.Shuffleable & ...
                                 matlab.io.datastore.Partitionable
@@ -18,7 +18,7 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
         NumClasses
         SequenceDimension
         MiniBatchSize
-        %FrameSize
+        FrameSize
     end
     
     properties(SetAccess = protected)
@@ -31,27 +31,27 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
     end
     
     methods
-        function ds = SpectrogramDatastore(folder)
+        function ds = SpectrogramDatastoreEval(folder)
             % Create a file datastore.
             fds = fileDatastore(folder, ...
                 'ReadFcn',@readSequence, ...
                 'IncludeSubfolders',true);
             ds.Datastore = fds;
             % Read labels from folder names
-            [labels, numObservations] = createLabels(fds.Files);
+            labels = createLabels(fds.Files);
             ds.Labels = labels;
             ds.NumClasses = numel(unique(labels));
+            numObservations = numel(fds.Files);
             % Determine sequence dimension
             filename = ds.Datastore.Files{1};
-            sample = load(filename).data;
+            sample = load(filename).data.frames{1};
             ds.SequenceDimension = size(sample);
             % Initialize datastore properties
             ds.MiniBatchSize = 8;
-            %ds.FrameSize = 20;
+            ds.FrameSize = 20;
             ds.NumObservations = numObservations;
             ds.CurrentFileIndex = 1;
             % shuffle
-            ds = balanceGestureSamples(ds);
             ds = shuffle(ds);
         end
         
@@ -63,31 +63,53 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
         
         function [data,info] = read(ds)            
             % Function to read data
-            info = struct;
             miniBatchSize = ds.MiniBatchSize;
             predictors = cell(miniBatchSize, 1);
             responses = cell(miniBatchSize, 1);
+            groundTruths = cell(miniBatchSize, 1);
             % Data for minibatch size is read
             for i = 1:miniBatchSize
-                %data = read(ds.Datastore).data;
-                data = read(ds.Datastore);
-                predictors{i,1} = data;
+                data = read(ds.Datastore).data;
+                predictors{i,1} = data.frames;
                 class = ds.Labels(ds.CurrentFileIndex);
                 responses{i,1} = class;
+                if ~isequal(class,'noGesture')
+                    groundTruths{i,1} = data.groundTruth;
+                end
                 ds.CurrentFileIndex = ds.CurrentFileIndex + 1;
             end
-            % Data is preprocessed;
-            data = preprocessData(ds, predictors, responses);
+            % Data is preprocessed
+            info.labels = responses;
+            [data, timePointSequences] = preprocessData(ds, predictors);
+            info.timePointSequences = timePointSequences;
+            info.groundTruths = groundTruths;
         end
         
-        function data = preprocessData(ds, predictors, responses)
+        function [data, timepointSequences] = preprocessData(ds,predictors)
             % Function to preprocess data
             miniBatchSize = ds.MiniBatchSize;
-            for i = 1:miniBatchSize
-                predictors{i} = predictors{i}.data;
+            frameSize = ds.FrameSize;
+            sequences = cell(miniBatchSize, 1);
+            labelSequences = cell(miniBatchSize, 1);
+            timepointSequences = cell(miniBatchSize, 1);
+            % Create data
+            parfor i = 1:miniBatchSize
+                numFrames = length(predictors{i});
+                sequence = cell(numFrames, 1);
+                sequenceLabels  = cell(1, numFrames);
+                sequenceTimepoints = zeros(1, numFrames);
+                for j = 1:numFrames
+                    sequence{j, 1} = predictors{i}{j,1};
+                    sequenceLabels{1, j} = predictors{i}{j,2};
+                    sequenceTimepoints(j) = predictors{i}{j,3};
+                end
+                sequences{i,1} = sequence;
+                labelSequences{i,1} = categorical(sequenceLabels, {'fist', 'noGesture', 'open', ... 
+                'pinch','waveIn', 'waveOut'});
+                timepointSequences{i,1} = sequenceTimepoints;
             end
             % Put the data in table form
-            data = table(predictors,responses);
+            data = table(sequences,labelSequences);
         end
         
         function reset(ds)
@@ -101,9 +123,9 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
             % Particionate the datastore
             subds = copy(myds);
             subds.Datastore = partition(subds.Datastore,n,ii);
+            numObservations = numel(subds.Datastore.Files);
             % Create the new labels
-            [labels, numObservations] = createLabels(subds.Datastore.Files);
-            subds.Labels = labels;
+            subds.Labels = createLabels(subds.Datastore.Files);
             subds.NumObservations = numObservations;
             reset(subds);
             reset(myds);
@@ -122,29 +144,19 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
             dsNew.Labels = dsNew.Labels(idx);
         end
         
-        function ds = balanceGestureSamples(ds)
-            labels = ds.Labels;
-            files = ds.Datastore.Files;
-            gestures = categorical(categories(labels));
-            catCounts = sort(countcats(labels));
-            minNumber = catCounts(1);
-            % Allocate space for results
-            newLabels = cell(minNumber * length(catCounts),1);
-            newFiles = cell(minNumber * length(catCounts),1);
-            % Get equal number of samples for each gesture
-            for i = 1:length(gestures)
-                isGesture = ismember(labels, gestures(i));
-                gestureIdxs = find(isGesture);
-                for j = 1:minNumber
-                    newLabels{((i-1)*minNumber) + j, 1} = char(gestures(i));
-                    newFiles{((i-1)*minNumber) + j, 1} = files{gestureIdxs(j)};
-                end
+        function ds = order(ds)
+            % Order the datasroes by number of frames
+            numObservations = numel(ds.Labels);
+            sequenceLengths = zeros(numObservations, 1);
+            files =  ds.Datastore.Files;
+            parfor i=1:numObservations
+                filename = files{i};
+                data = load(filename).data.frames;
+                sequenceLengths(i) = size(data,1);
             end
-            newLabels = categorical(newLabels,categories(gestures));
-            % Save the transformed data
-            ds.Labels = newLabels;
-            ds.NumObservations = length(newLabels);
-            ds.Datastore.Files = newFiles;
+            [~,idx] = sort(sequenceLengths);
+            ds.Datastore.Files = ds.Datastore.Files(idx);
+            ds.Labels = ds.Labels(idx);
         end
         
     end
@@ -170,7 +182,7 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
 end
 
 %% FUNCION PARA CREAR ETIQUETAS
-function [labels, numObservations] = createLabels(files)
+function labels = createLabels(files)
     % Get the number of files
     numObservations = numel(files);
     % Allocate spacce for labels
@@ -190,4 +202,3 @@ function data = readSequence(filename)
     % Load a Matlab file
     data = load(filename);
 end
-
