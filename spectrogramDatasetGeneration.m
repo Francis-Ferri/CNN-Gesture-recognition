@@ -13,10 +13,10 @@ SPECTROGRAM DATASET GENERATION
 %}
 
 %% DEFINE THE DIRECTORIES WHERE THE DATA WILL BE FOUND
-dataDir = 'EMG_EPN612_Dataset';
-trainingDir = 'trainingJSON';
+dataDir = 'EMG_EPN612_Dataset'; %'CEPRA_2019_13_DATASET_FINAL'
+trainingDir = 'trainingJSON'; %'training'
 
-%% GET THE TRAINING DIRECTORIES
+%% GET THE USERS DIRECTORIES
 trainingPath = fullfile(dataDir, trainingDir);
 users = ls(trainingPath);
 users = strtrim(string(users(3:length(users),:)));
@@ -29,10 +29,10 @@ users = users(1:1);
 
 %% THE STRUCTURE OF THE DATA STORE IS DEFINED
 labels = {'fist'; 'noGesture'; 'open'; 'pinch'; 'waveIn'; 'waveOut'};
-trainingDatastore = createDatastore('Datastores/trainingDatastore', labels);
-validationDatastore = createDatastore('Datastores/validationDatastore', labels);
-trainingEvalDatastore = createDatastore('Datastores/trainingEvalDatastore', labels);
-validationEvalDatastore = createDatastore('Datastores/validationEvalDatastore', labels);
+trainingDatastore = createDatastore('Datastores/training', labels);
+validationDatastore = createDatastore('Datastores/validation', labels);
+trainingEvalDatastore = createDatastore('Datastores/trainingSequence', labels);
+validationEvalDatastore = createDatastore('Datastores/validationSequence', labels);
 
 %% GENERATION OF SPECTROGRAMS TO CREATE THE MODEL
 for i = 1:length(users) % % parfor
@@ -41,11 +41,11 @@ for i = 1:length(users) % % parfor
     % Training data
     transformedSamplesTraining = generateData(trainingSamples);
     saveSampleInDatastore(transformedSamplesTraining, users(i), trainingDatastore);
-    saveSampleEvaluationDatastore(transformedSamplesTraining, users(i), trainingEvalDatastore);
+    saveSampleSeqInDatastore(transformedSamplesTraining, users(i), trainingEvalDatastore);
     % Validation data
     transformedSamplesValidation = generateData(validationSamples);
     saveSampleInDatastore(transformedSamplesValidation, users(i), validationDatastore);
-    saveSampleEvaluationDatastore(transformedSamplesValidation, users(i), validationEvalDatastore);
+    saveSampleSeqInDatastore(transformedSamplesValidation, users(i), validationEvalDatastore);
 end
 clear labels i validationSamples transformedSamplesValidation
 
@@ -124,11 +124,10 @@ end
 %% generateSpectrograms
 function [data] = generateFrames(signal, groundTruth, gestureName)
     % Creating spectrograms
-    [spectrograms, params] = generateSpectrograms(signal); % 100 x n x 8
+    [spectrograms, timestamps, params] = generateSpectrograms(signal); % 101 x n x 8
     % Creating frames
-    NUMCOLSFRAME = 20;
+    NUMCOLSFRAME = 40;
     numFrames = floor(params.numCols / NUMCOLSFRAME);
-    realShift = params.window - params.overlappimg;
     % Allocate space for the results
     data = cell(numFrames,3);
     for i = 1:numFrames
@@ -136,8 +135,8 @@ function [data] = generateFrames(signal, groundTruth, gestureName)
         firstCol = ((i - 1) * NUMCOLSFRAME) + 1;
         lastCol = NUMCOLSFRAME * i;
          % Start and finish points in sample
-        firstPoint = ((i - 1) * NUMCOLSFRAME * realShift) + 1;
-        lastPoint = lastCol * (realShift);
+        firstPoint = timestamps(firstCol) - (params.window/2) + 1;
+        lastPoint = timestamps(lastCol) + (params.window/2);
         % Save data
         data{i,1} = spectrograms(:, firstCol:lastCol, :); % datum
         data{i,2} = 'noGesture'; % label
@@ -147,7 +146,7 @@ function [data] = generateFrames(signal, groundTruth, gestureName)
             frameGroundTruth = groundTruth(firstPoint:lastPoint);
             totalZeros = sum(frameGroundTruth == 0);
             % More than half of window -> no gesture
-            if totalZeros <= (NUMCOLSFRAME * realShift)/2 % No creo QUE SEA ASI AQUI 
+            if totalZeros <= (lastPoint - firstPoint)/2 
                 data{i, 2} = gestureName; % label
             end
         end    
@@ -155,27 +154,28 @@ function [data] = generateFrames(signal, groundTruth, gestureName)
 end
 
 %% FUNCTION TO GENERATE SPECTROGRAMS
-function [spectrograms, params] = generateSpectrograms(signal)
- %{
-        Consideraciones espectrogramas
-            Probar - No sacar directamente espectrogras, si no el logaritmo de la 
-            transformada de FOurier al cuadrado como en speech recognition
-    %}
+function [spectrograms,timestamps, params] = generateSpectrograms(signal)
     % Spectrogram parameters
-    frecuencies = 1:1:100;
+    frecuencies = (0:100);
     sampleFrecuency = 200;
-    WINDOW = 2;
-    OVERLAPPING = 0; %floor(window*0.5);
+    WINDOW = 200;
+    OVERLAPPING = 199; %floor(window*0.5);
     % Allocate space for the spectrograms
     numCols = floor((length(signal)-OVERLAPPING)/(WINDOW-OVERLAPPING));
-    spectrograms = zeros(100, numCols, 8);
+    spectrograms = zeros(101, numCols, 8);
     % Spectrograms generation
     for i = 1:8
-        spectrograms(:,:,i) = spectrogram(signal(:,i), WINDOW, OVERLAPPING, frecuencies, sampleFrecuency, 'yaxis');
+        [s,f,t,ps] = spectrogram(signal(:,i), WINDOW, OVERLAPPING, frecuencies, sampleFrecuency, 'yaxis');
+        spectrograms(:,:,i) = ps;
     end
-    % Get the spectrogram real part
+    % Get times
+    timestamps = round(t * 200);
+    % Get the spectrogram real value
     %spectrograms = abs(spectrograms);
-    spectrograms = real(spectrograms);
+    % Get the spectrogram real part
+    %spectrograms = real(spectrograms);
+    %spectrograms = power(real(spectrograms), 2);
+    %spectrograms = log(power(real(spectrograms), 2));
     % Put parameters in structure
     params.numCols = numCols;
     params.window = WINDOW;
@@ -209,7 +209,7 @@ function saveSampleInDatastore(samples, user, data_store)
 end
 
 %% FUNCTION TO SAVE SPECTROGRAMS IN DATASTORE
-function saveSampleEvaluationDatastore(samples, user, data_store)
+function saveSampleSeqInDatastore(samples, user, data_store)
     for i = 1:length(samples) 
         frames = samples{i,1};
         class = samples{i,2};
