@@ -16,7 +16,7 @@ classdef SpectrogramDatastoreEval < matlab.io.Datastore & ...
         Datastore
         Labels
         NumClasses
-        SequenceDimension
+        DataDimensions
         MiniBatchSize
         FrameSize
     end
@@ -45,10 +45,10 @@ classdef SpectrogramDatastoreEval < matlab.io.Datastore & ...
             % Determine sequence dimension
             filename = ds.Datastore.Files{1};
             sample = load(filename).data.frames{1};
-            ds.SequenceDimension = size(sample);
+            ds.DataDimensions = size(sample);
             % Initialize datastore properties
             ds.MiniBatchSize = 8;
-            ds.FrameSize = 20;
+            ds.FrameSize = size(sample, 2);
             ds.NumObservations = numObservations;
             ds.CurrentFileIndex = 1;
             % shuffle
@@ -88,7 +88,6 @@ classdef SpectrogramDatastoreEval < matlab.io.Datastore & ...
         function [data, timepointSequences] = preprocessData(ds,predictors)
             % Function to preprocess data
             miniBatchSize = ds.MiniBatchSize;
-            frameSize = ds.FrameSize;
             sequences = cell(miniBatchSize, 1);
             labelSequences = cell(miniBatchSize, 1);
             timepointSequences = cell(miniBatchSize, 1);
@@ -119,16 +118,14 @@ classdef SpectrogramDatastoreEval < matlab.io.Datastore & ...
             ds.NumObservations = size(ds.Datastore.Files, 1);
         end
         
-        function subds = partition(myds,n,ii)
-            % Particionate the datastore
-            subds = copy(myds);
-            subds.Datastore = partition(subds.Datastore,n,ii);
-            numObservations = numel(subds.Datastore.Files);
-            % Create the new labels
-            subds.Labels = createLabels(subds.Datastore.Files);
-            subds.NumObservations = numObservations;
-            reset(subds);
-            reset(myds);
+        function [ds1, ds2] = partition(ds, percentage)
+            % Get the limit of the new division
+            numObservations = ds.NumObservations;
+            newLimit = floor(numObservations * percentage);
+            % Create the first datastore
+            ds1 = setNumberFiles(ds, 1, newLimit);
+            % Create the second datastore
+            ds2 = setNumberFiles(ds, newLimit+1, numObservations);
         end
                 
         function dsNew = shuffle(ds)
@@ -143,22 +140,6 @@ classdef SpectrogramDatastoreEval < matlab.io.Datastore & ...
             fds.Files = fds.Files(idx);
             dsNew.Labels = dsNew.Labels(idx);
         end
-        
-        function ds = order(ds)
-            % Order the datasroes by number of frames
-            numObservations = numel(ds.Labels);
-            sequenceLengths = zeros(numObservations, 1);
-            files =  ds.Datastore.Files;
-            parfor i=1:numObservations
-                filename = files{i};
-                data = load(filename).data.frames;
-                sequenceLengths(i) = size(data,1);
-            end
-            [~,idx] = sort(sequenceLengths);
-            ds.Datastore.Files = ds.Datastore.Files(idx);
-            ds.Labels = ds.Labels(idx);
-        end
-        
     end
     
     methods (Access = protected)
@@ -201,4 +182,14 @@ end
 function data = readSequence(filename)
     % Load a Matlab file
     data = load(filename);
+end
+
+function dsNew = setNumberFiles(ds, first, last)
+    % Create the first datastore
+    dsNew = copy(ds);
+    %dsNew.Datastore = copy(ds.Datastore);
+    fds = dsNew.Datastore;
+    fds.Files = fds.Files(first:last);
+    dsNew.Labels = dsNew.Labels(first:last);
+    reset(dsNew);
 end

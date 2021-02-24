@@ -4,12 +4,13 @@ SPECTROGRAM DATASET GENERATION
     2. For each user:
         a. Samples are obteined
         b. For each sample:
-            i. The sample is diveded into frames
+            i. The spectrograms are calculated
+            i. The spectrograms is diveded into frames
             ii. For each frame:
-                I. The spectrogram is calculated
-            iii. The frames are sabed with their corresponding labels
-        c. Each sample with its frames and labels are saved in the
-        datastore
+                I. A label is asigned (noGesture | gestureName)
+                II. A tmestap is asigned
+            iii. The frames are organized with their corresponding gesture names (franes - gestureName)
+        c. Each sample with its frames and labels are saved in the datastore
 %}
 
 %% DEFINE THE DIRECTORIES WHERE THE DATA WILL BE FOUND
@@ -17,25 +18,22 @@ dataDir = 'EMG_EPN612_Dataset'; %'CEPRA_2019_13_DATASET_FINAL'
 trainingDir = 'trainingJSON'; %'training'
 
 %% GET THE USERS DIRECTORIES
-trainingPath = fullfile(dataDir, trainingDir);
-users = ls(trainingPath);
-users = strtrim(string(users(3:length(users),:)));
-rng(9); % seed
-users = users(randperm(length(users)));
-clear data_dir trainingDir
+[users, trainingPath] = getUsers(dataDir, trainingDir);
+clear dataDir trainingDir
 
 %%                      BORRAR ESTO AL ACABAR SOLO ES PARA HACER PRUEBAS CON PORCIONES
 users = users(1:1);
 
-%% THE STRUCTURE OF THE DATA STORE IS DEFINED
+%% THE STRUCTURE OF THE DATASTORE IS DEFINED
 labels = {'fist'; 'noGesture'; 'open'; 'pinch'; 'waveIn'; 'waveOut'};
 trainingDatastore = createDatastore('Datastores/training', labels);
 validationDatastore = createDatastore('Datastores/validation', labels);
+% To evaluate each sample as a sequence
 trainingEvalDatastore = createDatastore('Datastores/trainingSequence', labels);
 validationEvalDatastore = createDatastore('Datastores/validationSequence', labels);
 
 %% GENERATION OF SPECTROGRAMS TO CREATE THE MODEL
-for i = 1:length(users) % % parfor
+parfor i = 1:length(users) % % parfor
     % Get user samples
     [trainingSamples, validationSamples] = getTrainingTestingSamples(trainingPath, users(i));
     % Training data
@@ -48,6 +46,15 @@ for i = 1:length(users) % % parfor
     saveSampleSeqInDatastore(transformedSamplesValidation, users(i), validationEvalDatastore);
 end
 clear labels i validationSamples transformedSamplesValidation
+
+%% GET THE USER LIST
+function [users, dataPath] = getUsers(dataDir, subDir)
+    dataPath = fullfile(dataDir, subDir);
+    users = ls(dataPath);
+    users = strtrim(string(users(3:length(users),:)));
+    rng(9); % seed
+    users = users(randperm(length(users)));
+end
 
 %% GET TRAINING AND TESTING SAMPLES FOR AN USER
 function [trainingSamples, testingSamples] = getTrainingTestingSamples(path, user)
@@ -101,10 +108,12 @@ end
 
 %% FUNCTION TO GET THE EMG SIGNAL
 function signal = getSignal(emg)
-    chanels = fieldnames(emg); % get chanels
-    signal = zeros(length(emg.(chanels{1})), length(chanels)); % ex: 1000 x 8
-    for j = 1:length(chanels)
-        signal(:,j) = emg.(chanels{j});
+    % Get channel nnames (keys)
+    channels = fieldnames(emg);
+    % Preallocate space for the result (ex: 1000 x 8)
+    signal = zeros(length(emg.(channels{1})), length(channels));
+    for j = 1:length(channels)
+        signal(:,j) = emg.(channels{j});
     end
 end
 
@@ -123,8 +132,8 @@ end
 
 %% generateSpectrograms
 function [data] = generateFrames(signal, groundTruth, gestureName)
-    % Creating spectrograms
-    [spectrograms, timestamps, params] = generateSpectrograms(signal); % 101 x n x 8
+    % Creating spectrograms (ex: 101 x n x 8)
+    [spectrograms, timestamps, params] = generateSpectrograms(signal);
     % Creating frames
     NUMCOLSFRAME = 40;
     numFrames = floor(params.numCols / NUMCOLSFRAME);
@@ -144,9 +153,10 @@ function [data] = generateFrames(signal, groundTruth, gestureName)
         % Check no gesture and change label
         if ~isequal(gestureName,'noGesture')
             frameGroundTruth = groundTruth(firstPoint:lastPoint);
-            totalZeros = sum(frameGroundTruth == 0);
-            % More than half of window -> no gesture
-            if totalZeros <= (lastPoint - firstPoint)/2 
+            totalOnes = sum(frameGroundTruth == 1);
+            % The presence is the quantity of the gesture in the window
+            PRESENCE = 1/2;
+            if totalOnes >= (lastPoint - firstPoint)*PRESENCE
                 data{i, 2} = gestureName; % label
             end
         end    
@@ -156,26 +166,21 @@ end
 %% FUNCTION TO GENERATE SPECTROGRAMS
 function [spectrograms,timestamps, params] = generateSpectrograms(signal)
     % Spectrogram parameters
-    frecuencies = (0:100);
+    FRECUENCIES = (0:100);
     sampleFrecuency = 200;
+    % Almost mandaory 200 to analize from 0 to 100 fecuencies
     WINDOW = 200;
     OVERLAPPING = 199; %floor(window*0.5);
-    % Allocate space for the spectrograms
+    % Preallocate space for the spectrograms
     numCols = floor((length(signal)-OVERLAPPING)/(WINDOW-OVERLAPPING));
-    spectrograms = zeros(101, numCols, 8);
+    spectrograms = zeros(length(FRECUENCIES), numCols, 8);
     % Spectrograms generation
     for i = 1:8
-        [s,f,t,ps] = spectrogram(signal(:,i), WINDOW, OVERLAPPING, frecuencies, sampleFrecuency, 'yaxis');
+        [~,~,t,ps] = spectrogram(signal(:,i), WINDOW, OVERLAPPING, FRECUENCIES, sampleFrecuency, 'yaxis');
         spectrograms(:,:,i) = ps;
     end
     % Get times
-    timestamps = round(t * 200);
-    % Get the spectrogram real value
-    %spectrograms = abs(spectrograms);
-    % Get the spectrogram real part
-    %spectrograms = real(spectrograms);
-    %spectrograms = power(real(spectrograms), 2);
-    %spectrograms = log(power(real(spectrograms), 2));
+    timestamps = round(t * WINDOW);
     % Put parameters in structure
     params.numCols = numCols;
     params.window = WINDOW;
@@ -225,3 +230,12 @@ function saveSampleSeqInDatastore(samples, user, data_store)
         save(savePath,'data');
     end
 end
+
+%% EXTRA THINGS
+%{
+    % Get the spectrogram's module values
+    spectrograms = abs(spectrograms);
+    % Get the data in decibels I think
+    10*log10(abs(s));
+%}
+    

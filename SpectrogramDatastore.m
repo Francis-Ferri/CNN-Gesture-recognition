@@ -1,8 +1,8 @@
 %{
 CUSTOM MINIBATCH SPECTROGRAM DATASTORE
-    1. A Datastore type fileDatastore is generated
+    1. A datastore of type fileDatastore is generated
     2. Spectrogram files are read
-    3. A Labels field is created in the Datastore
+    3. A Label field is created in the Datastore
     4. Add support to minibatch
     5. Add support to shuffle
     6. Add support to partitions
@@ -16,9 +16,8 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
         Datastore
         Labels
         NumClasses
-        SequenceDimension
+        DataDimensions
         MiniBatchSize
-        %FrameSize
     end
     
     properties(SetAccess = protected)
@@ -44,10 +43,9 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
             % Determine sequence dimension
             filename = ds.Datastore.Files{1};
             sample = load(filename).data;
-            ds.SequenceDimension = size(sample);
+            ds.DataDimensions = size(sample);
             % Initialize datastore properties
-            ds.MiniBatchSize = 8;
-            %ds.FrameSize = 20;
+            ds.MiniBatchSize = 32;
             ds.NumObservations = numObservations;
             ds.CurrentFileIndex = 1;
             % shuffle
@@ -83,7 +81,7 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
         function data = preprocessData(ds, predictors, responses)
             % Function to preprocess data
             miniBatchSize = ds.MiniBatchSize;
-            for i = 1:miniBatchSize
+            parfor i = 1:miniBatchSize
                 predictors{i} = predictors{i}.data;
             end
             % Put the data in table form
@@ -97,22 +95,19 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
             ds.NumObservations = size(ds.Datastore.Files, 1);
         end
         
-        function subds = partition(myds,n,ii)
-            % Particionate the datastore
-            subds = copy(myds);
-            subds.Datastore = partition(subds.Datastore,n,ii);
-            % Create the new labels
-            [labels, numObservations] = createLabels(subds.Datastore.Files);
-            subds.Labels = labels;
-            subds.NumObservations = numObservations;
-            reset(subds);
-            reset(myds);
+        function [ds1, ds2] = partition(ds, percentage)
+            % Get the limit of the new division
+            numObservations = ds.NumObservations;
+            newLimit = floor(numObservations * percentage);
+            % Create the first datastore
+            ds1 = setNumberFiles(ds, 1, newLimit);
+            % Create the second datastore
+            ds2 = setNumberFiles(ds, newLimit+1, numObservations);
         end
                 
         function dsNew = shuffle(ds)
             % Create a copy of datastore
             dsNew = copy(ds);
-            dsNew.Datastore = copy(ds.Datastore);
             fds = dsNew.Datastore;
             % Shuffle files and their corresponding labels
             numObservations = dsNew.NumObservations;
@@ -124,21 +119,28 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
         
         function ds = balanceGestureSamples(ds)
             labels = ds.Labels;
-            files = ds.Datastore.Files;
+            allFiles = ds.Datastore.Files;
             gestures = categorical(categories(labels));
             catCounts = sort(countcats(labels));
             minNumber = catCounts(1);
             % Allocate space for results
-            newLabels = cell(minNumber * length(catCounts),1);
-            newFiles = cell(minNumber * length(catCounts),1);
+            newLabels = {};
+            newFiles = {};
             % Get equal number of samples for each gesture
-            for i = 1:length(gestures)
+            parfor i = 1:length(gestures)
+                files = allFiles;
+                gestureLabels = cell(minNumber, 1);
+                gestureFiles = cell(minNumber, 1);
+                % Put 1s where is the gesture and 0s where is not
                 isGesture = ismember(labels, gestures(i));
+                % Get indexes of ones
                 gestureIdxs = find(isGesture);
                 for j = 1:minNumber
-                    newLabels{((i-1)*minNumber) + j, 1} = char(gestures(i));
-                    newFiles{((i-1)*minNumber) + j, 1} = files{gestureIdxs(j)};
+                    gestureLabels{j, 1} = char(gestures(i));
+                    gestureFiles{j, 1} = files{gestureIdxs(j)};
                 end
+                newLabels = [newLabels; gestureLabels];
+                newFiles = [newFiles; gestureFiles];
             end
             newLabels = categorical(newLabels,categories(gestures));
             % Save the transformed data
@@ -147,6 +149,13 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
             ds.Datastore.Files = newFiles;
         end
         
+        function dsNew = setDataAmount(ds, percentage)
+            % Get the limit of the new division
+            numObservations = ds.NumObservations;
+            newLimit = floor(numObservations * percentage);
+            % Set the new number of files
+            dsNew = setNumberFiles(ds, 1, newLimit);
+        end
     end
     
     methods (Access = protected)
@@ -189,5 +198,15 @@ end
 function data = readSequence(filename)
     % Load a Matlab file
     data = load(filename);
+end
+
+function dsNew = setNumberFiles(ds, first, last)
+    % Create the first datastore
+    dsNew = copy(ds);
+    %dsNew.Datastore = copy(ds.Datastore);
+    fds = dsNew.Datastore;
+    fds.Files = fds.Files(first:last);
+    dsNew.Labels = dsNew.Labels(first:last);
+    reset(dsNew);
 end
 

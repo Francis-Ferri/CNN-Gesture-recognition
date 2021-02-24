@@ -3,24 +3,24 @@
 %}
 
 %%
-dataDirTraining = fullfile('Datastores', 'trainingDatastore');
-dataDirValidation = fullfile('Datastores', 'validationDatastore');
+dataDirTraining = fullfile('Datastores', 'training');
+dataDirValidation = fullfile('Datastores', 'validation');
 
 %% THE DATASTORES RE CREATED
 % The classes are defined
 classes = ["fist","noGesture","open","pinch","waveIn","waveOut"];
 trainingDatastore = SpectrogramDatastore(dataDirTraining);
 validationDatastore = SpectrogramDatastore(dataDirValidation);
-%dataSample = preview(training_datastore);
+%dataSample = preview(trainingDatastore);
 clear dataDirTraining dataDirValidation
 
 %% THE INPUT DIMENSIONS ARE DEFINED
-inputSize = trainingDatastore.SequenceDimension;
+inputSize = trainingDatastore.DataDimensions;
 
 %% DEFINE THE AMOUNT OF DATA
 % The amount of data to be used in the creation is specified ]0:1]
 trainingDatastore = setDataAmount(trainingDatastore, 1);
-validationDatastore = setDataAmount(validationDatastore, 1);
+validationDatastore = setDataAmount(validationDatastore, 0.5);
 
 %% THE DATA IS DIVIDED IN TRAINING-VALIDATION-TESTING
 % The training-validation-tests data is obtained
@@ -34,44 +34,38 @@ fprintf('\n%s\n%s\n%s\n', numTrainingSamples, numValidationSamples, numTestingSa
 clear numTrainingSamples numValidationSamples numTestingSamples
 
 %% THE NEURAL NETWORK ARCHITECTURE IS DEFINED
-filterSize = 2;
-numFilters = 20;
-numClasses = length(classes);
+numClasses = trainingDatastore.NumClasses;
 layers = [ ...
-    imageInputLayer(inputSize, 'Name','input')
-    convolution2dLayer(filterSize,numFilters,'Name','conv', 'Padding','same') 
-    batchNormalizationLayer('Name','bn')
-    reluLayer('Name','relu')
-    maxPooling2dLayer([2 2],"Name","maxpool")
-    
-    dropoutLayer(0.2,"Name","drop")
-    
-    convolution2dLayer(filterSize,2*numFilters,'Name','conv_1', 'Padding','same') 
-    batchNormalizationLayer('Name','bn_1')
-    reluLayer('Name','relu_1')
-    
-    
-    fullyConnectedLayer(numClasses, 'Name','fc')
-    softmaxLayer('Name','softmax')
-    classificationLayer('Name','classification')];
-clear inputSize numHiddenUnits filterSize numFilters numClasses
+    imageInputLayer([101, 40, 8])%40
+    convolution2dLayer([3 3],8,"Padding","same")
+    batchNormalizationLayer
+    reluLayer
+    maxPooling2dLayer([2 2], 'Stride',2)
+    convolution2dLayer([3 3],8,"Padding","same")%20
+    batchNormalizationLayer
+    reluLayer
+    fullyConnectedLayer(numClasses,"Name","fc2")
+    softmaxLayer("Name","softmax")
+    classificationLayer("Name","classoutput")];
+
+clear numHiddenUnits filterSize numFilters numClasses
 
 %% THE OPTIONS ARE DIFINED
-maxEpochs = 1;
-miniBatchSize = 8;
+maxEpochs = 2;
+miniBatchSize = 32;
 options = trainingOptions('adam', ...
     'InitialLearnRate', 0.001, ...
     'LearnRateSchedule','piecewise', ...
     'LearnRateDropFactor',0.2, ...
-    'LearnRateDropPeriod',5, ...
-    'ExecutionEnvironment','cpu', ...
+    'LearnRateDropPeriod',3, ...
+    'ExecutionEnvironment','cpu', ... %gpu
     'GradientThreshold',1, ...
     'MaxEpochs',maxEpochs, ...
     'MiniBatchSize',miniBatchSize, ...
     'Shuffle','never', ...
     'Verbose',0, ...
     'ValidationData', validationDatastore, ...
-    'ValidationFrequency',50, ...
+    'ValidationFrequency',floor(trainingDatastore.NumObservations/ miniBatchSize), ...
     'ValidationPatience',5, ...
     'Plots','training-progress');
 clear maxEpochs miniBatchSize
@@ -80,39 +74,151 @@ clear maxEpochs miniBatchSize
 net = trainNetwork(trainingDatastore, layers, options);
 clear options 
 
+%% CONFUSION MATRIX
+
+
 %% EVALUATING DATA
-dataDirTrainingEval = fullfile('Datastores', 'trainingEvalDatastore');
-trainingEvalDatastore = SpectrogramDatastoreEval(dataDirTrainingEval);
-dataDirValidationEval = fullfile('Datastores', 'validationEvalDatastore');
-validationEvalDatastore = SpectrogramDatastoreEval(dataDirValidationEval);
-clear dataDirEvaluation
+dataDirTrainingSeq = fullfile('Datastores', 'trainingSequence');
+dataDirValidationSeq = fullfile('Datastores', 'validationSequence');
+trainingSeqDatastore = SpectrogramDatastoreEval(dataDirTrainingSeq);
+validationSeqDatastore = SpectrogramDatastoreEval(dataDirValidationSeq);
+clear dataDirTrainingSeq dataDirValidationSeq
 
 %% CALCULATE ACCURACIES
 fprintf('\nRESULTS\n');
 disp('Training results');
-evaluateDataStore(net, trainingEvalDatastore);
+[clasifications, predictions, overlapings, procesingTimes] = evaluateDataStore(net, trainingSeqDatastore);
 disp('Validation results');
-evaluateDataStore(net, validationEvalDatastore);
+evaluateDataStore(net, validationSeqDatastore);
 
 %% PLOT PREDICCTION/REAL SAMPLE FROM DATASET
-plotPredictionDatastore(net, trainingEvalDatastore, 2);
+plotPredictionDatastore(net, trainingSeqDatastore, 30);
 
 %% FUNCTION TO DIVIDE DATASTORE IN TWO HALVES
 function [firstDatstore, secondDatastore] = divideDatastore(dataStore)
     % First datstore(50%) && second datastore(50%)
-    firstDatstore =  partition(dataStore,2,1);
-    secondDatastore = partition(dataStore,2,2);
+    [firstDatstore, secondDatastore] =  partition(dataStore, 0.5);
 end
 
-%% FUNCTION TO SET THE AMOUNT OF DATA
-function datastore = setDataAmount(datastore, dataAmount)
-    % Obtain the limit value index
-    idxLimit = floor(size(datastore.Labels,1) * dataAmount);
-    % The data is split within the datastore
-    datastore.Datastore.Files = datastore.Datastore.Files(1:idxLimit);
-    datastore.Labels = datastore.Labels(1:idxLimit);
-    % NumObservations must be counted again
-    reset(datastore);
+%% FUCTION TO EVALUATE ALL THE SAMPLES USING THE VALIDATION LIBRARY
+function [classifications, predictions, overlapings, procesingTimes] = evaluateDataStore(net, ds)
+    reset(ds)
+    numObservations = ds.NumObservations;
+    % Allocate space to save the results
+    [classifications, predictions, overlapings, procesingTimes] = preallocateValidationResults(numObservations);
+    % Index initialization
+    idx = 1;
+    [classifications, predictions, overlapings, procesingTimes, idx] = evaluateSequences(net, ds, ...
+    classifications, predictions, overlapings, procesingTimes, idx);
+    % Change the minibatch to process the remaining
+    ds.MiniBatchSize = 1;
+    [classifications, predictions, overlapings, procesingTimes, ~] = evaluateSequences(net, ds, ...
+    classifications, predictions, overlapings, procesingTimes, idx);
+    % Change NaN to 0 in the overlapping error
+    overlapings(isnan(overlapings)) = 0;
+    calculateValidationResults(classifications, predictions, overlapings, procesingTimes);
+end
+
+%% FUNCTION TO EVALUATE THE SAMPLES IN A SEQUENCE DATASTORE
+function [classifications, predictions, overlapings, procesingTimes, idx] = evaluateSequences(net, ...
+    ds, classifications, predictions, overlapings, procesingTimes, idx)
+    while hasdata(ds)
+        [data, info] = read(ds);
+        labels = info.labels;
+        groundTruths = info.groundTruths;
+        timepointSequences = info.timePointSequences;
+        for i = 1:length(labels)
+            gestureName = labels{i};
+            % Original information
+            repInfo.gestureName = gestureName;
+            if ~isequal(gestureName,'noGesture')
+                repInfo.groundTruth = groundTruths{i};
+            end
+            % Allocate space for the results
+            sequence = data.sequences{i};
+            numFrames = length(sequence);
+            % Predictions for each frame
+            [vectorOfLabels, vectorOfProcessingTimes] = sequencePredictions(net, numFrames, sequence);
+            % Classify prediction
+            [class, vectorOfLabels] = classifyPredictions(vectorOfLabels);
+            result = evaluateSample(vectorOfLabels, timepointSequences{i}, ...
+                vectorOfProcessingTimes, class, repInfo);
+            % Save results
+            classifications(idx) = result.classResult;
+            if ~isequal(gestureName,'noGesture')
+                predictions(idx) = result.recogResult;
+                overlapings(idx) = result.overlappingFactor;
+            end
+            procesingTimes(idx) = sum(vectorOfProcessingTimes); %time
+            idx = idx + 1;
+        end
+    end
+end
+
+%% FUNCTION TO MAKE PREDICTIONS FOR A SEQUENCE OF FRAMES OF A SAMPLE
+function [vectorOfLabels, vectorOfProcessingTimes] = sequencePredictions(net, numFrames, sequence)
+    vectorOfLabels = cell (1, numFrames);
+    vectorOfProcessingTimes = zeros(1,numFrames);
+    % Predict and calculate time
+    for j = 1:numFrames
+        frame = sequence{j,1};
+        timer = tic;
+        yPred = classify(net,frame);
+        time = toc(timer);
+        vectorOfLabels{1, j} = char(yPred);
+        vectorOfProcessingTimes(1, j) = time;
+    end
+end
+
+
+%% FUNCTION TO EVALUATE A SAMPLE WITH THE VALIDATION LIBRARY
+function result = evaluateSample(vectorOfLabels, timepointSequences, vectorOfProcessingTimes, class, repInfo)
+    % Predicted information
+    response.vectorOfLabels = vectorOfLabels;
+    response.vectorOfTimePoints = timepointSequences;
+    response.vectorOfProcessingTimes = vectorOfProcessingTimes;
+    response.class = class;
+    % Evaluate
+    result = evalRecognition(repInfo, response);
+end
+
+%% FUCTION TO PREALLOCATE SPACE FOR VALIDATION LIBRARY RESULT
+function [clasifications, predictions, overlapings, procesingTimes] = preallocateValidationResults(numObservations)
+    % Allocate space to save the results
+    clasifications = zeros(numObservations, 1);
+    predictions = -1*ones(numObservations, 1);
+    overlapings = -1*ones(numObservations, 1);
+    procesingTimes = zeros(numObservations, 1);
+end
+
+%% FUNCTION TO CLASSIFY PREDICTIONS
+function [class, yPred] = classifyPredictions(yPred)
+    gestures = {'fist', 'noGesture', 'open', 'pinch', 'waveIn', 'waveOut'};
+    yPred = categorical(yPred,gestures);
+    categories = categorical(gestures);
+    catCounts = countcats(yPred);
+    [catCounts,indexes] = sort(catCounts,'descend');
+    newCategories = categories(indexes);
+    if catCounts(2) >= 4
+       class = newCategories(2);
+    else
+       class = categories(2);
+    end
+end
+
+%% FUNCTION TO CALCULATE THE RESULTS OF A SEQUENCE DATASTORE
+function calculateValidationResults(clasifications, predictions, overlapings, procesingTimes)
+    % Perform the calculation
+    accClasification = sum(clasifications==1) / length(clasifications);
+    % This is because noGesture is not predicted (-1)
+    accPrediction = sum(predictions==1) / sum(predictions==1 | predictions==0);
+    avgOverlapingFactor = mean(overlapings(overlapings ~= -1)); %& ~isnan(overlapings)
+    avgProcesing_time = mean(procesingTimes);
+    % Display the results
+    fprintf('Classification accuracy: %f\n',accClasification);
+    fprintf('Prediction accuracy: %f\n',accPrediction);
+    fprintf('Avegage overlaping factor: %f\n',avgOverlapingFactor);
+    fprintf('Avegage procesing time: %f\n',avgProcesing_time);  
 end
 
 %% FUNCTION TO PLOT A COMPARISON (REAL/PREDICTED) OF A SAMPLE FROM DATASTORE
@@ -159,96 +265,46 @@ function plotPredictionComparison(YTest, YPred)
     legend(["Predicted" "Test Data"])
 end
 
-%% FUCTION TO EVALUATE DATA USING THE VALIDATION LIBRARY
-function evaluateDataStore(net, datastore)
-    reset(datastore)
-    numObservations = datastore.NumObservations;
-    % Allocate space to save the results
-    [clasifications, predictions, overlapings, procesingTimes] = preallocateValidationResults(numObservations);
-    % Index initialization
-    idx = 1;
-    while hasdata(datastore)
-        [data, info] = read(datastore);
-        labels = info.labels;
-        groundTruths = info.groundTruths;
-        timepointSequences = info.timePointSequences;
-        for i = 1:length(labels)
-            gestureName = labels{i};
-            % Original information
-            repInfo.gestureName = gestureName;
-            if ~isequal(gestureName,'noGesture')
-                repInfo.groundTruth = groundTruths{i};
-            end
-            % Allocate space for the results
-            sequence = data.sequences{i};
-            numFrames = length(sequence);
-            vectorOfLabels = cell (1, numFrames);
-            vectorOfProcessingTimes = zeros(1,numFrames);
-            % Predict and calculate time
-            for j = 1:numFrames
-                frame = sequence{j,1};
-                timer = tic;
-                yPred = classify(net,frame);
-                time = toc(timer);
-                vectorOfLabels{1, j} = char(yPred);
-                vectorOfProcessingTimes(1, j) = time;
-            end
-            % Classify prediction
-            [class, vectorOfLabels] = classifyPredictions(vectorOfLabels);
-            % Predicteed information
-            response.vectorOfLabels = vectorOfLabels;
-            response.vectorOfTimePoints = timepointSequences{i};
-            response.vectorOfProcessingTimes = vectorOfProcessingTimes;
-            response.class = class;
-            % Evaluate
-            result = evalRecognition(repInfo, response);
-            % Save results
-            clasifications(idx) = result.classResult;
-            if ~isequal(gestureName,'noGesture')
-                predictions(idx) = result.recogResult;
-                overlapings(idx) = result.overlappingFactor;
-            end
-            procesingTimes(idx) = time;
-            idx = idx + 1;
-        end
-    end
-    calculateValidationResults(clasifications, predictions, procesingTimes, overlapings);
-end
-
-%% FUCTION TO PREALLOCATE SPACE FOR VALIDATION LIBRARY RESULT
-function [clasifications, predictions, overlapings, procesingTimes] = preallocateValidationResults(numObservations)
-    % Allocate space to save the results
-    clasifications = zeros(numObservations, 1);
-    predictions = -1*ones(numObservations, 1);
-    overlapings = zeros(numObservations, 1);
-    procesingTimes = zeros(numObservations, 1);
-end
-
-%% FUNCTION TO CLASSIFY PREDICTIONS
-function [class, yPred] = classifyPredictions(yPred)
-    gestures = {'fist', 'noGesture', 'open', 'pinch', 'waveIn', 'waveOut'};
-    yPred = categorical(yPred,gestures);
-    categories = categorical(gestures);
-    catCounts = countcats(yPred);
-    [catCounts,indexes] = sort(catCounts,'descend');
-    newCategories = categories(indexes);
-    if catCounts(2) >= 4
-       class = newCategories(2);
-    else
-       class = categories(2);
-    end
-end
-
 %%
-function calculateValidationResults(clasifications, predictions, procesingTimes, overlapings)
-    % Perform the calculation
-    accClasification = sum(clasifications==1) / length(clasifications);
-    accPrediction = sum(predictions==1) / sum(predictions==1 | predictions==0);
-    avgProcesing_time = mean(procesingTimes);
-    avgOverlapingFactor = mean(overlapings(overlapings ~= 0 & ~isnan(overlapings)));
-    % Display the results
-    fprintf('Classification accuracy: %f\n',accClasification);
-    fprintf('Prediction accuracy: %f\n',accPrediction);
-    fprintf('Avegage procesing time: %f\n',avgProcesing_time);
-    fprintf('Avegage overlaping factor: %f\n\n',avgOverlapingFactor);
-end
+%{ 
+layers = [ ...
+    imageInputLayer([101, 40, 8])%40
+    convolution2dLayer([3 3],8,"Padding","same")
+    batchNormalizationLayer
+    reluLayer
+    maxPooling2dLayer([2 2], 'Stride',2)
+    convolution2dLayer([3 3],8,"Padding","same")%20
+    batchNormalizationLayer
+    reluLayer
+    maxPooling2dLayer([2 2], 'Stride',2)
+    convolution2dLayer([3 3],8,"Padding","same")%10
+    batchNormalizationLayer
+    reluLayer
+    convolution2dLayer([3 3],8,"Padding","same")%5
+    batchNormalizationLayer
+    reluLayer
+    maxPooling2dLayer([2 2], 'Stride',2)
+    convolution2dLayer([3 3],8,"Padding","same")%5
+    batchNormalizationLayer
+    reluLayer
+    convolution2dLayer([3 3],8,"Padding","same")%5
+    batchNormalizationLayer
+    reluLayer
+    maxPooling2dLayer([2 2], 'Stride',2)
+    convolution2dLayer([3 3],16,"Padding","same")%2
+    batchNormalizationLayer
+    reluLayer
+    convolution2dLayer([3 3],16,"Padding","same")
+    batchNormalizationLayer
+    reluLayer
+    convolution2dLayer([3 3],32,"Padding","same")
+    batchNormalizationLayer
+    reluLayer
+    fullyConnectedLayer(128,"Name","fc")
+    fullyConnectedLayer(64,"Name","fc1")
+    fullyConnectedLayer(numClasses,"Name","fc2")
+    softmaxLayer("Name","softmax")
+    classificationLayer("Name","classoutput")];
+
+
+%}
