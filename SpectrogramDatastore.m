@@ -96,13 +96,42 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
         end
         
         function [ds1, ds2] = partition(ds, percentage)
+            ds1 = copy(ds);
+            ds2 = copy(ds);
             % Get the limit of the new division
             numObservations = ds.NumObservations;
-            newLimit = floor(numObservations * percentage);
+            numClassSamples = floor(numObservations / ds.NumClasses);
+            limitOfSamples = floor(numClassSamples*percentage);
+            dsNew = matchSampleNumber(ds, numClassSamples);
+            labels = dsNew.Labels;
+            files = dsNew.Datastore.Files;
+            
+            ds1Labels = {};
+            ds1Files = {};
+            ds2Labels = {};
+            ds2Files = {};
+            
+            for i = 0:ds.NumClasses-1
+                start = (i * numClassSamples) + 1;
+                limit = start + limitOfSamples;
+                last = (i+1) * numClassSamples;
+                ds1Labels = [ds1Labels; labels(start:limit-1, 1)];
+                ds1Files = [ds1Files; files(start:limit-1, 1)];
+                ds2Labels = [ds2Labels; labels(limit:last, 1)];
+                ds2Files = [ds2Files; files(limit:last, 1)];
+                
+            end
             % Create the first datastore
-            ds1 = setNumberFiles(ds, 1, newLimit);
+            ds1.NumObservations = length(ds1Labels);
+            ds2.NumObservations = length(ds2Labels);
+            
+            ds1.Labels = ds1Labels;
+            ds1.Datastore.Files = ds1Files;
             % Create the second datastore
-            ds2 = setNumberFiles(ds, newLimit+1, numObservations);
+            ds2.Labels = ds2Labels;
+            ds2.Datastore.Files = ds2Files;
+            ds1 = shuffle(ds1);
+            ds2 = shuffle(ds2);
         end
                 
         function dsNew = shuffle(ds)
@@ -117,44 +146,22 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
             dsNew.Labels = dsNew.Labels(idx);
         end
         
-        function ds = balanceGestureSamples(ds)
+        function dsNew = balanceGestureSamples(ds)
             labels = ds.Labels;
-            allFiles = ds.Datastore.Files;
-            gestures = categorical(categories(labels));
             catCounts = sort(countcats(labels));
             minNumber = catCounts(1);
-            % Allocate space for results
-            newLabels = {};
-            newFiles = {};
-            % Get equal number of samples for each gesture
-            parfor i = 1:length(gestures)
-                files = allFiles;
-                gestureLabels = cell(minNumber, 1);
-                gestureFiles = cell(minNumber, 1);
-                % Put 1s where is the gesture and 0s where is not
-                isGesture = ismember(labels, gestures(i));
-                % Get indexes of ones
-                gestureIdxs = find(isGesture);
-                for j = 1:minNumber
-                    gestureLabels{j, 1} = char(gestures(i));
-                    gestureFiles{j, 1} = files{gestureIdxs(j)};
-                end
-                newLabels = [newLabels; gestureLabels];
-                newFiles = [newFiles; gestureFiles];
-            end
-            newLabels = categorical(newLabels,categories(gestures));
-            % Save the transformed data
-            ds.Labels = newLabels;
-            ds.NumObservations = length(newLabels);
-            ds.Datastore.Files = newFiles;
+            dsNew = matchSampleNumber(ds, minNumber);
+            dsNew = shuffle(dsNew);
         end
         
         function dsNew = setDataAmount(ds, percentage)
             % Get the limit of the new division
             numObservations = ds.NumObservations;
             newLimit = floor(numObservations * percentage);
+            numClassSamples = floor(newLimit/ds.NumClasses);
             % Set the new number of files
-            dsNew = setNumberFiles(ds, 1, newLimit);
+            dsNew = matchSampleNumber(ds, numClassSamples);
+            dsNew = shuffle(dsNew);
         end
     end
     
@@ -200,13 +207,31 @@ function data = readSequence(filename)
     data = load(filename);
 end
 
-function dsNew = setNumberFiles(ds, first, last)
-    % Create the first datastore
-    dsNew = copy(ds);
-    %dsNew.Datastore = copy(ds.Datastore);
-    fds = dsNew.Datastore;
-    fds.Files = fds.Files(first:last);
-    dsNew.Labels = dsNew.Labels(first:last);
-    reset(dsNew);
+function ds = matchSampleNumber(ds, repetitions)
+    labels = ds.Labels;
+    files = ds.Datastore.Files;
+    gestures = categorical(categories(labels));
+    % Allocate space for results
+    newLabels = {};
+    newFiles = {};
+    % Get equal number of samples for each gesture
+    parfor i = 1:length(gestures)
+        gestureLabels = cell(repetitions, 1);
+        gestureFiles = cell(repetitions, 1);
+        % Put 1s where is the gesture and 0s where is not
+        isGesture = ismember(labels, gestures(i));
+        % Get indexes of ones
+        gestureIdxs = find(isGesture);
+        for j = 1:repetitions
+            gestureLabels{j, 1} = char(gestures(i));
+            gestureFiles{j, 1} = files{gestureIdxs(j)};
+        end
+        newLabels = [newLabels; gestureLabels];
+        newFiles = [newFiles; gestureFiles];
+    end
+    newLabels = categorical(newLabels,categories(gestures));
+    % Save the transformed data
+    ds.Labels = newLabels;
+    ds.NumObservations = length(newLabels);
+    ds.Datastore.Files = newFiles;
 end
-

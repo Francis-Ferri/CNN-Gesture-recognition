@@ -17,7 +17,7 @@ clear dataDir trainingDir
 %% SELECT ONE USER AND SAMPLE
 user = users(2);
 type = 'training'; %validation
-numSample = 33;
+numSample = 34;
 [signal, gestureName] = getSample(trainingPath, user, numSample, type);
 
 %% PLOT SIGNAL AND SPECTROGRAMS OF EACH CHANNEL
@@ -133,7 +133,7 @@ function [s, f, t, ps] = calculateSpectrogram(signal)
     sampleFrecuency = 200;
     % Almost mandaory 200 to analize from 0 to 100 fecuencies
     WINDOW = 200;
-    OVERLAPPING = 199; %floor(window*0.5);
+    OVERLAPPING = 0; %floor(window*0.5);
     % Plot the figure
     [s, f, t, ps] = spectrogram(signal, WINDOW, OVERLAPPING, FRECUENCIES, sampleFrecuency, 'yaxis');
 end

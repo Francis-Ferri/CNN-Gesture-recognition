@@ -8,7 +8,7 @@ dataDirValidation = fullfile('Datastores', 'validation');
 
 %% THE DATASTORES RE CREATED
 % The classes are defined
-classes = ["fist","noGesture","open","pinch","waveIn","waveOut"];
+classes = ["fist", "noGesture", "open", "pinch", "waveIn", "waveOut"];
 trainingDatastore = SpectrogramDatastore(dataDirTraining);
 validationDatastore = SpectrogramDatastore(dataDirValidation);
 %dataSample = preview(trainingDatastore);
@@ -74,8 +74,13 @@ clear maxEpochs miniBatchSize
 net = trainNetwork(trainingDatastore, layers, options);
 clear options 
 
-%% CONFUSION MATRIX
+%% CONFUSION MATRIX FOR EACH DATASET
+calculateConfusionMatrix(net, trainingDatastore, 'training')
+calculateConfusionMatrix(net, validationDatastore, 'validation')
+calculateConfusionMatrix(net, testingDatastore, 'testing')
 
+%% SAVE MODEL
+save(['model_', datestr(now,'dd-mm-yyyy_HH-MM-ss')], 'net');
 
 %% EVALUATING DATA
 dataDirTrainingSeq = fullfile('Datastores', 'trainingSequence');
@@ -263,6 +268,24 @@ function plotPredictionComparison(YTest, YPred)
     ylabel("Gesture")
     title("Predicted Gestures")
     legend(["Predicted" "Test Data"])
+end
+
+%% FUNCTION TO CALCULATE AD PLOT A CONFUSION MATRIX
+function calculateConfusionMatrix(net, datastore, datasetName)
+    % Get predictions of each frame
+    predLabels = classify(net, datastore);
+    realLabels = datastore.Labels;
+    % Stablish clases
+    clases = categorical({'fist', 'noGesture', 'open', 'pinch','waveIn', 'waveOut'});
+    % Create the confusion matrix
+    confusionMatrix = confusionmat(realLabels, predLabels,'Order',clases);
+    figure('Name', ['Confusion Matrix - ' datasetName])
+        matrixChart = confusionchart(confusionMatrix, clases);
+        % Chart options
+        matrixChart.ColumnSummary = 'column-normalized';
+        matrixChart.RowSummary = 'row-normalized';
+        matrixChart.Title = ['Hand gestures - ' datasetName];
+        sortClasses(matrixChart,clases);
 end
 
 %%
