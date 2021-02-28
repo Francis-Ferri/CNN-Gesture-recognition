@@ -1,8 +1,16 @@
 %{
     MODEL CREATION
+        1. Load datastores
+        2. Define the amount of data
+        3. Divide into training validation and testing
+        4. Train the network
+        5. Measure accuracy for datastores
+        6. Calculate confusion matrices
+        7. Evaluate data samples with the validation library
+        8. Plot a sample (actual / predicted)
 %}
 
-%%
+%% SET DATASTORES PATHS
 dataDirTraining = fullfile('Datastores', 'training');
 dataDirValidation = fullfile('Datastores', 'validation');
 
@@ -20,7 +28,7 @@ inputSize = trainingDatastore.DataDimensions;
 %% DEFINE THE AMOUNT OF DATA
 % The amount of data to be used in the creation is specified ]0:1]
 trainingDatastore = setDataAmount(trainingDatastore, 1);
-validationDatastore = setDataAmount(validationDatastore, 0.5);
+validationDatastore = setDataAmount(validationDatastore, 1);
 
 %% THE DATA IS DIVIDED IN TRAINING-VALIDATION-TESTING
 % The training-validation-tests data is obtained
@@ -35,20 +43,10 @@ clear numTrainingSamples numValidationSamples numTestingSamples
 
 %% THE NEURAL NETWORK ARCHITECTURE IS DEFINED
 numClasses = trainingDatastore.NumClasses;
-layers = [ ...
-    imageInputLayer([101, 40, 8])%40
-    convolution2dLayer([3 3],8,"Padding","same")
-    batchNormalizationLayer
-    reluLayer
-    maxPooling2dLayer([2 2], 'Stride',2)
-    convolution2dLayer([3 3],8,"Padding","same")%20
-    batchNormalizationLayer
-    reluLayer
-    fullyConnectedLayer(numClasses,"Name","fc2")
-    softmaxLayer("Name","softmax")
-    classificationLayer("Name","classoutput")];
-
-clear numHiddenUnits filterSize numFilters numClasses
+lgraph = setNeuralNetworkArchitecture(inputSize, numClasses);
+analyzeNetwork(lgraph);
+% Clean up helper variable
+clear numClasses
 
 %% THE OPTIONS ARE DIFINED
 maxEpochs = 2;
@@ -71,13 +69,25 @@ options = trainingOptions('adam', ...
 clear maxEpochs miniBatchSize
 
 %% NETWORK TRAINING
-net = trainNetwork(trainingDatastore, layers, options);
+net = trainNetwork(trainingDatastore, lgraph, options);
 clear options 
 
+%% ACCURACY FOR EACH DATASET
+% Get training-validation-tests accuracies
+accTraining = calculateAccuracy(net, trainingDatastore);
+accValidation = calculateAccuracy(net, validationDatastore);
+accTesting = calculateAccuracy(net, testingDatastore);
+% The total data for training-validation-tests is obtained
+strAccTraining = ['Training accuracy: ', num2str(accTraining)];
+strAccValidation = ['Validation accuracy: ', num2str(accValidation)];
+strAccTesting = ['Testing accuracy: ', num2str(accTesting)];
+% The amount of training-validation-tests data is printed
+fprintf('\n%s\n%s\n%s\n', strAccTraining, strAccValidation, strAccTesting);
+
 %% CONFUSION MATRIX FOR EACH DATASET
-calculateConfusionMatrix(net, trainingDatastore, 'training')
-calculateConfusionMatrix(net, validationDatastore, 'validation')
-calculateConfusionMatrix(net, testingDatastore, 'testing')
+calculateConfusionMatrix(net, trainingDatastore, 'training');
+calculateConfusionMatrix(net, validationDatastore, 'validation');
+calculateConfusionMatrix(net, testingDatastore, 'testing');
 
 %% SAVE MODEL
 save(['model_', datestr(now,'dd-mm-yyyy_HH-MM-ss')], 'net');
@@ -103,6 +113,131 @@ plotPredictionDatastore(net, trainingSeqDatastore, 30);
 function [firstDatstore, secondDatastore] = divideDatastore(dataStore)
     % First datstore(50%) && second datastore(50%)
     [firstDatstore, secondDatastore] =  partition(dataStore, 0.5);
+end
+
+%% FUNCTION TO STABLISH THE NEURL NETWORK ARCHITECTURE
+function lgraph = setNeuralNetworkArchitecture(inputSize, numClasses)
+    % Create layer graph
+    lgraph = layerGraph();
+    % Add layer branches
+    tempLayers = [
+        imageInputLayer(inputSize,"Name","data")
+        convolution2dLayer([3 3],16,"Name","conv1-3x3-s1","Padding",[1 1 1 1])
+        batchNormalizationLayer("Name","batchnorm1")
+        reluLayer("Name","relu1")
+        maxPooling2dLayer([2 2],"Name","pool1-2x2_s2","Stride",[2 2])];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        convolution2dLayer([1 1],32,"Name","Inception_2a-1x1")
+        reluLayer("Name","Inception_2a-1x1_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        convolution2dLayer([1 1],8,"Name","Inception_2a-5x5_reduce")
+        reluLayer("Name","Inception_2a-5x5_relu_reduce")
+        convolution2dLayer([5 5],16,"Name","Inception_2a-5x5","Padding",[2 2 2 2])
+        reluLayer("Name","Inception_2a-5x5_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        maxPooling2dLayer([3 3],"Name","Inception_2a-pool","Padding",[1 1 1 1])
+        convolution2dLayer([1 1],16,"Name","Inception_2a-pool_proj")
+        reluLayer("Name","Inception_2a-relu-pool_proj")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        convolution2dLayer([1 1],16,"Name","Inception_2a-3x3_reduce")
+        reluLayer("Name","Inception_2a-3x3_relu_reduce")
+        convolution2dLayer([3 3],32,"Name","Inception_2a-3x3","Padding",[1 1 1 1])
+        reluLayer("Name","Inception_2a-3x3_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        depthConcatenationLayer(4,"Name","depthcat_1")
+        maxPooling2dLayer([2 2],"Name","pool2-2x2_s2","Stride",[2 2])];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        maxPooling2dLayer([3 3],"Name","Inception_3a-pool","Padding",[1 1 1 1])
+        convolution2dLayer([1 1],16,"Name","Inception_3a-pool_proj")
+        reluLayer("Name","Inception_3a-relu-pool_proj")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        convolution2dLayer([1 1],32,"Name","Inception_3a-1x1")
+        reluLayer("Name","Inception_3a-1x1_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        convolution2dLayer([1 1],8,"Name","Inception_3a-5x5_reduce")
+        reluLayer("Name","Inception_3a-5x5_relu_reduce")
+        convolution2dLayer([5 5],16,"Name","Inception_3a-5x5","Padding",[2 2 2 2])
+        reluLayer("Name","Inception_3a-5x5_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        convolution2dLayer([1 1],16,"Name","Inception_3a-3x3_reduce")
+        reluLayer("Name","Inception_3a-3x3_relu_reduce")
+        convolution2dLayer([3 3],32,"Name","Inception_3a-3x3","Padding",[1 1 1 1])
+        reluLayer("Name","Inception_3a-3x3_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        depthConcatenationLayer(4,"Name","depthcat_2")
+        maxPooling2dLayer([2 2],"Name","pool3-2x2_s2","Stride",[2 2])];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        maxPooling2dLayer([3 3],"Name","Inception_4a-pool","Padding",[1 1 1 1])
+        convolution2dLayer([1 1],16,"Name","Inception_4a-pool_proj")
+        reluLayer("Name","Inception_4a-relu-pool_proj")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        convolution2dLayer([1 1],32,"Name","Inception_4a-1x1")
+        reluLayer("Name","Inception_4a-1x1_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        convolution2dLayer([1 1],16,"Name","Inception_4a-3x3_reduce")
+        reluLayer("Name","Inception_4a-3x3_relu_reduce")
+        convolution2dLayer([3 3],32,"Name","Inception_4a-3x3","Padding",[1 1 1 1])
+        reluLayer("Name","Inception_4a-3x3_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        convolution2dLayer([1 1],8,"Name","Inception_4a-5x5_reduce")
+        reluLayer("Name","Inception_4a-5x5_relu_reduce")
+        convolution2dLayer([5 5],16,"Name","Inception_4a-5x5","Padding",[2 2 2 2])
+        reluLayer("Name","Inception_4a-5x5_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        depthConcatenationLayer(4,"Name","depthcat_3")
+        dropoutLayer(0.5,"Name","dropout")
+        fullyConnectedLayer(numClasses,"Name","fc")
+        softmaxLayer("Name","softmax")
+        classificationLayer("Name","classoutput")];
+    lgraph = addLayers(lgraph,tempLayers);
+    % Connect layer branches
+    lgraph = connectLayers(lgraph,"pool1-2x2_s2","Inception_2a-1x1");
+    lgraph = connectLayers(lgraph,"pool1-2x2_s2","Inception_2a-5x5_reduce");
+    lgraph = connectLayers(lgraph,"pool1-2x2_s2","Inception_2a-pool");
+    lgraph = connectLayers(lgraph,"pool1-2x2_s2","Inception_2a-3x3_reduce");
+    lgraph = connectLayers(lgraph,"Inception_2a-relu-pool_proj","depthcat_1/in4");
+    lgraph = connectLayers(lgraph,"Inception_2a-1x1_relu","depthcat_1/in1");
+    lgraph = connectLayers(lgraph,"Inception_2a-5x5_relu","depthcat_1/in3");
+    lgraph = connectLayers(lgraph,"Inception_2a-3x3_relu","depthcat_1/in2");
+    lgraph = connectLayers(lgraph,"pool2-2x2_s2","Inception_3a-pool");
+    lgraph = connectLayers(lgraph,"pool2-2x2_s2","Inception_3a-1x1");
+    lgraph = connectLayers(lgraph,"pool2-2x2_s2","Inception_3a-5x5_reduce");
+    lgraph = connectLayers(lgraph,"pool2-2x2_s2","Inception_3a-3x3_reduce");
+    lgraph = connectLayers(lgraph,"Inception_3a-1x1_relu","depthcat_2/in1");
+    lgraph = connectLayers(lgraph,"Inception_3a-5x5_relu","depthcat_2/in3");
+    lgraph = connectLayers(lgraph,"Inception_3a-3x3_relu","depthcat_2/in2");
+    lgraph = connectLayers(lgraph,"Inception_3a-relu-pool_proj","depthcat_2/in4");
+    lgraph = connectLayers(lgraph,"pool3-2x2_s2","Inception_4a-pool");
+    lgraph = connectLayers(lgraph,"pool3-2x2_s2","Inception_4a-1x1");
+    lgraph = connectLayers(lgraph,"pool3-2x2_s2","Inception_4a-3x3_reduce");
+    lgraph = connectLayers(lgraph,"pool3-2x2_s2","Inception_4a-5x5_reduce");
+    lgraph = connectLayers(lgraph,"Inception_4a-1x1_relu","depthcat_3/in1");
+    lgraph = connectLayers(lgraph,"Inception_4a-5x5_relu","depthcat_3/in3");
+    lgraph = connectLayers(lgraph,"Inception_4a-3x3_relu","depthcat_3/in2");
+    lgraph = connectLayers(lgraph,"Inception_4a-relu-pool_proj","depthcat_3/in4");
+end
+
+%% FUNCTION TO CALCULATE ACCURACY OF A DATASTORE
+function accuracy = calculateAccuracy(net, datastore)
+    YPred = classify(net,datastore);
+    YValidation = datastore.Labels;
+    % Calculate accuracy
+    accuracy = sum(YPred == YValidation)/numel(YValidation);
 end
 
 %% FUCTION TO EVALUATE ALL THE SAMPLES USING THE VALIDATION LIBRARY
@@ -174,7 +309,6 @@ function [vectorOfLabels, vectorOfProcessingTimes] = sequencePredictions(net, nu
         vectorOfProcessingTimes(1, j) = time;
     end
 end
-
 
 %% FUNCTION TO EVALUATE A SAMPLE WITH THE VALIDATION LIBRARY
 function result = evaluateSample(vectorOfLabels, timepointSequences, vectorOfProcessingTimes, class, repInfo)
@@ -287,47 +421,3 @@ function calculateConfusionMatrix(net, datastore, datasetName)
         matrixChart.Title = ['Hand gestures - ' datasetName];
         sortClasses(matrixChart,clases);
 end
-
-%%
-%{ 
-layers = [ ...
-    imageInputLayer([101, 40, 8])%40
-    convolution2dLayer([3 3],8,"Padding","same")
-    batchNormalizationLayer
-    reluLayer
-    maxPooling2dLayer([2 2], 'Stride',2)
-    convolution2dLayer([3 3],8,"Padding","same")%20
-    batchNormalizationLayer
-    reluLayer
-    maxPooling2dLayer([2 2], 'Stride',2)
-    convolution2dLayer([3 3],8,"Padding","same")%10
-    batchNormalizationLayer
-    reluLayer
-    convolution2dLayer([3 3],8,"Padding","same")%5
-    batchNormalizationLayer
-    reluLayer
-    maxPooling2dLayer([2 2], 'Stride',2)
-    convolution2dLayer([3 3],8,"Padding","same")%5
-    batchNormalizationLayer
-    reluLayer
-    convolution2dLayer([3 3],8,"Padding","same")%5
-    batchNormalizationLayer
-    reluLayer
-    maxPooling2dLayer([2 2], 'Stride',2)
-    convolution2dLayer([3 3],16,"Padding","same")%2
-    batchNormalizationLayer
-    reluLayer
-    convolution2dLayer([3 3],16,"Padding","same")
-    batchNormalizationLayer
-    reluLayer
-    convolution2dLayer([3 3],32,"Padding","same")
-    batchNormalizationLayer
-    reluLayer
-    fullyConnectedLayer(128,"Name","fc")
-    fullyConnectedLayer(64,"Name","fc1")
-    fullyConnectedLayer(numClasses,"Name","fc2")
-    softmaxLayer("Name","softmax")
-    classificationLayer("Name","classoutput")];
-
-
-%}
