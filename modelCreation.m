@@ -49,13 +49,14 @@ analyzeNetwork(lgraph);
 clear numClasses
 
 %% THE OPTIONS ARE DIFINED
-maxEpochs = 2;
-miniBatchSize = 32;
+%gpuDevice(1);
+maxEpochs = 2;%10
+miniBatchSize = 32;%1024
 options = trainingOptions('adam', ...
     'InitialLearnRate', 0.001, ...
     'LearnRateSchedule','piecewise', ...
     'LearnRateDropFactor',0.2, ...
-    'LearnRateDropPeriod',3, ...
+    'LearnRateDropPeriod',3, ... %8
     'ExecutionEnvironment','cpu', ... %gpu
     'GradientThreshold',1, ...
     'MaxEpochs',maxEpochs, ...
@@ -70,7 +71,10 @@ clear maxEpochs miniBatchSize
 
 %% NETWORK TRAINING
 net = trainNetwork(trainingDatastore, lgraph, options);
-clear options 
+clear options
+
+%% ANALIZE CHARACTERISTIC EXTRACTOR USING T-SNE
+tsneAnalisis(trainingDatastore, net, 'depthcat_4', 500);
 
 %% ACCURACY FOR EACH DATASET
 % Get training-validation-tests accuracies
@@ -120,118 +124,227 @@ function lgraph = setNeuralNetworkArchitecture(inputSize, numClasses)
     % Create layer graph
     lgraph = layerGraph();
     % Add layer branches
+    tempLayers = imageInputLayer(inputSize,"Name","data");
+    lgraph = addLayers(lgraph,tempLayers);
+
     tempLayers = [
-        imageInputLayer(inputSize,"Name","data")
-        convolution2dLayer([3 3],16,"Name","conv1-3x3-s1","Padding",[1 1 1 1])
-        batchNormalizationLayer("Name","batchnorm1")
-        reluLayer("Name","relu1")
+        convolution2dLayer([1 1],32,"Name","Inception_1a-1x1")
+        reluLayer("Name","Inception_1a-1x1_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        maxPooling2dLayer([3 3],"Name","Inception_1a-pool","Padding",[1 1 1 1])
+        convolution2dLayer([1 1],16,"Name","Inception_1a-pool_proj")
+        reluLayer("Name","Inception_1a-relu-pool_proj")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        convolution2dLayer([1 1],8,"Name","Inception_1a-5x5_reduce")
+        reluLayer("Name","Inception_2a-5x5_relu_reduce_2")
+        convolution2dLayer([5 5],16,"Name","Inception_1a-5x5","Padding",[2 2 2 2])
+        reluLayer("Name","Inception_1a-5x5_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        convolution2dLayer([1 1],16,"Name","Inception_1a-3x3_reduce")
+        reluLayer("Name","Inception_1a-3x3_relu_reduce")
+        convolution2dLayer([3 3],32,"Name","Inception_1a-3x3","Padding",[1 1 1 1])
+        reluLayer("Name","Inception_1a-3x3_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        depthConcatenationLayer(4,"Name","depthcat_1")
         maxPooling2dLayer([2 2],"Name","pool1-2x2_s2","Stride",[2 2])];
     lgraph = addLayers(lgraph,tempLayers);
+
     tempLayers = [
         convolution2dLayer([1 1],32,"Name","Inception_2a-1x1")
         reluLayer("Name","Inception_2a-1x1_relu")];
     lgraph = addLayers(lgraph,tempLayers);
-    tempLayers = [
-        convolution2dLayer([1 1],8,"Name","Inception_2a-5x5_reduce")
-        reluLayer("Name","Inception_2a-5x5_relu_reduce")
-        convolution2dLayer([5 5],16,"Name","Inception_2a-5x5","Padding",[2 2 2 2])
-        reluLayer("Name","Inception_2a-5x5_relu")];
-    lgraph = addLayers(lgraph,tempLayers);
-    tempLayers = [
-        maxPooling2dLayer([3 3],"Name","Inception_2a-pool","Padding",[1 1 1 1])
-        convolution2dLayer([1 1],16,"Name","Inception_2a-pool_proj")
-        reluLayer("Name","Inception_2a-relu-pool_proj")];
-    lgraph = addLayers(lgraph,tempLayers);
+
     tempLayers = [
         convolution2dLayer([1 1],16,"Name","Inception_2a-3x3_reduce")
         reluLayer("Name","Inception_2a-3x3_relu_reduce")
         convolution2dLayer([3 3],32,"Name","Inception_2a-3x3","Padding",[1 1 1 1])
         reluLayer("Name","Inception_2a-3x3_relu")];
     lgraph = addLayers(lgraph,tempLayers);
+
     tempLayers = [
-        depthConcatenationLayer(4,"Name","depthcat_1")
+        convolution2dLayer([1 1],8,"Name","Inception_2a-5x5_reduce")
+        reluLayer("Name","Inception_2a-5x5_relu_reduce_1")
+        convolution2dLayer([5 5],16,"Name","Inception_2a-5x5","Padding",[2 2 2 2])
+        reluLayer("Name","Inception_2a-5x5_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        maxPooling2dLayer([3 3],"Name","Inception_2a-pool","Padding",[1 1 1 1])
+        convolution2dLayer([1 1],16,"Name","Inception_2a-pool_proj")
+        reluLayer("Name","Inception_2a-relu-pool_proj")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        depthConcatenationLayer(4,"Name","depthcat_2")
         maxPooling2dLayer([2 2],"Name","pool2-2x2_s2","Stride",[2 2])];
     lgraph = addLayers(lgraph,tempLayers);
-    tempLayers = [
-        maxPooling2dLayer([3 3],"Name","Inception_3a-pool","Padding",[1 1 1 1])
-        convolution2dLayer([1 1],16,"Name","Inception_3a-pool_proj")
-        reluLayer("Name","Inception_3a-relu-pool_proj")];
-    lgraph = addLayers(lgraph,tempLayers);
-    tempLayers = [
-        convolution2dLayer([1 1],32,"Name","Inception_3a-1x1")
-        reluLayer("Name","Inception_3a-1x1_relu")];
-    lgraph = addLayers(lgraph,tempLayers);
+
     tempLayers = [
         convolution2dLayer([1 1],8,"Name","Inception_3a-5x5_reduce")
         reluLayer("Name","Inception_3a-5x5_relu_reduce")
         convolution2dLayer([5 5],16,"Name","Inception_3a-5x5","Padding",[2 2 2 2])
         reluLayer("Name","Inception_3a-5x5_relu")];
     lgraph = addLayers(lgraph,tempLayers);
+
     tempLayers = [
         convolution2dLayer([1 1],16,"Name","Inception_3a-3x3_reduce")
         reluLayer("Name","Inception_3a-3x3_relu_reduce")
         convolution2dLayer([3 3],32,"Name","Inception_3a-3x3","Padding",[1 1 1 1])
         reluLayer("Name","Inception_3a-3x3_relu")];
     lgraph = addLayers(lgraph,tempLayers);
+
     tempLayers = [
-        depthConcatenationLayer(4,"Name","depthcat_2")
+        convolution2dLayer([1 1],32,"Name","Inception_3a-1x1")
+        reluLayer("Name","Inception_3a-1x1_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        maxPooling2dLayer([3 3],"Name","Inception_3a-pool","Padding",[1 1 1 1])
+        convolution2dLayer([1 1],16,"Name","Inception_3a-pool_proj")
+        reluLayer("Name","Inception_3a-relu-pool_proj")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        depthConcatenationLayer(4,"Name","depthcat_3")
         maxPooling2dLayer([2 2],"Name","pool3-2x2_s2","Stride",[2 2])];
     lgraph = addLayers(lgraph,tempLayers);
+
     tempLayers = [
         maxPooling2dLayer([3 3],"Name","Inception_4a-pool","Padding",[1 1 1 1])
         convolution2dLayer([1 1],16,"Name","Inception_4a-pool_proj")
         reluLayer("Name","Inception_4a-relu-pool_proj")];
     lgraph = addLayers(lgraph,tempLayers);
+
     tempLayers = [
         convolution2dLayer([1 1],32,"Name","Inception_4a-1x1")
         reluLayer("Name","Inception_4a-1x1_relu")];
     lgraph = addLayers(lgraph,tempLayers);
-    tempLayers = [
-        convolution2dLayer([1 1],16,"Name","Inception_4a-3x3_reduce")
-        reluLayer("Name","Inception_4a-3x3_relu_reduce")
-        convolution2dLayer([3 3],32,"Name","Inception_4a-3x3","Padding",[1 1 1 1])
-        reluLayer("Name","Inception_4a-3x3_relu")];
-    lgraph = addLayers(lgraph,tempLayers);
+
     tempLayers = [
         convolution2dLayer([1 1],8,"Name","Inception_4a-5x5_reduce")
         reluLayer("Name","Inception_4a-5x5_relu_reduce")
         convolution2dLayer([5 5],16,"Name","Inception_4a-5x5","Padding",[2 2 2 2])
         reluLayer("Name","Inception_4a-5x5_relu")];
     lgraph = addLayers(lgraph,tempLayers);
+
     tempLayers = [
-        depthConcatenationLayer(4,"Name","depthcat_3")
+        convolution2dLayer([1 1],16,"Name","Inception_4a-3x3_reduce")
+        reluLayer("Name","Inception_4a-3x3_relu_reduce")
+        convolution2dLayer([3 3],32,"Name","Inception_4a-3x3","Padding",[1 1 1 1])
+        reluLayer("Name","Inception_4a-3x3_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        depthConcatenationLayer(4,"Name","depthcat_4")
         dropoutLayer(0.5,"Name","dropout")
         fullyConnectedLayer(numClasses,"Name","fc")
         softmaxLayer("Name","softmax")
         classificationLayer("Name","classoutput")];
     lgraph = addLayers(lgraph,tempLayers);
     % Connect layer branches
+    lgraph = connectLayers(lgraph,"data","Inception_1a-1x1");
+    lgraph = connectLayers(lgraph,"data","Inception_1a-pool");
+    lgraph = connectLayers(lgraph,"data","Inception_1a-5x5_reduce");
+    lgraph = connectLayers(lgraph,"data","Inception_1a-3x3_reduce");
+    lgraph = connectLayers(lgraph,"Inception_1a-1x1_relu","depthcat_1/in1");
+    lgraph = connectLayers(lgraph,"Inception_1a-relu-pool_proj","depthcat_1/in4");
+    lgraph = connectLayers(lgraph,"Inception_1a-5x5_relu","depthcat_1/in3");
+    lgraph = connectLayers(lgraph,"Inception_1a-3x3_relu","depthcat_1/in2");
     lgraph = connectLayers(lgraph,"pool1-2x2_s2","Inception_2a-1x1");
+    lgraph = connectLayers(lgraph,"pool1-2x2_s2","Inception_2a-3x3_reduce");
     lgraph = connectLayers(lgraph,"pool1-2x2_s2","Inception_2a-5x5_reduce");
     lgraph = connectLayers(lgraph,"pool1-2x2_s2","Inception_2a-pool");
-    lgraph = connectLayers(lgraph,"pool1-2x2_s2","Inception_2a-3x3_reduce");
-    lgraph = connectLayers(lgraph,"Inception_2a-relu-pool_proj","depthcat_1/in4");
-    lgraph = connectLayers(lgraph,"Inception_2a-1x1_relu","depthcat_1/in1");
-    lgraph = connectLayers(lgraph,"Inception_2a-5x5_relu","depthcat_1/in3");
-    lgraph = connectLayers(lgraph,"Inception_2a-3x3_relu","depthcat_1/in2");
-    lgraph = connectLayers(lgraph,"pool2-2x2_s2","Inception_3a-pool");
-    lgraph = connectLayers(lgraph,"pool2-2x2_s2","Inception_3a-1x1");
+    lgraph = connectLayers(lgraph,"Inception_2a-1x1_relu","depthcat_2/in1");
+    lgraph = connectLayers(lgraph,"Inception_2a-3x3_relu","depthcat_2/in2");
+    lgraph = connectLayers(lgraph,"Inception_2a-relu-pool_proj","depthcat_2/in4");
+    lgraph = connectLayers(lgraph,"Inception_2a-5x5_relu","depthcat_2/in3");
     lgraph = connectLayers(lgraph,"pool2-2x2_s2","Inception_3a-5x5_reduce");
     lgraph = connectLayers(lgraph,"pool2-2x2_s2","Inception_3a-3x3_reduce");
-    lgraph = connectLayers(lgraph,"Inception_3a-1x1_relu","depthcat_2/in1");
-    lgraph = connectLayers(lgraph,"Inception_3a-5x5_relu","depthcat_2/in3");
-    lgraph = connectLayers(lgraph,"Inception_3a-3x3_relu","depthcat_2/in2");
-    lgraph = connectLayers(lgraph,"Inception_3a-relu-pool_proj","depthcat_2/in4");
+    lgraph = connectLayers(lgraph,"pool2-2x2_s2","Inception_3a-1x1");
+    lgraph = connectLayers(lgraph,"pool2-2x2_s2","Inception_3a-pool");
+    lgraph = connectLayers(lgraph,"Inception_3a-3x3_relu","depthcat_3/in2");
+    lgraph = connectLayers(lgraph,"Inception_3a-1x1_relu","depthcat_3/in1");
+    lgraph = connectLayers(lgraph,"Inception_3a-relu-pool_proj","depthcat_3/in4");
+    lgraph = connectLayers(lgraph,"Inception_3a-5x5_relu","depthcat_3/in3");
     lgraph = connectLayers(lgraph,"pool3-2x2_s2","Inception_4a-pool");
     lgraph = connectLayers(lgraph,"pool3-2x2_s2","Inception_4a-1x1");
-    lgraph = connectLayers(lgraph,"pool3-2x2_s2","Inception_4a-3x3_reduce");
     lgraph = connectLayers(lgraph,"pool3-2x2_s2","Inception_4a-5x5_reduce");
-    lgraph = connectLayers(lgraph,"Inception_4a-1x1_relu","depthcat_3/in1");
-    lgraph = connectLayers(lgraph,"Inception_4a-5x5_relu","depthcat_3/in3");
-    lgraph = connectLayers(lgraph,"Inception_4a-3x3_relu","depthcat_3/in2");
-    lgraph = connectLayers(lgraph,"Inception_4a-relu-pool_proj","depthcat_3/in4");
+    lgraph = connectLayers(lgraph,"pool3-2x2_s2","Inception_4a-3x3_reduce");
+    lgraph = connectLayers(lgraph,"Inception_4a-relu-pool_proj","depthcat_4/in4");
+    lgraph = connectLayers(lgraph,"Inception_4a-3x3_relu","depthcat_4/in2");
+    lgraph = connectLayers(lgraph,"Inception_4a-5x5_relu","depthcat_4/in3");
+    lgraph = connectLayers(lgraph,"Inception_4a-1x1_relu","depthcat_4/in1");
 end
 
+%% FUNCTION TO EVLUATE A DATASTORE SAMPLE USING T-SNE
+function tsneAnalisis(datastore, net, layer, numSamples)
+    rng default % for reproducibility
+    % Get samples
+    originalMinibatch = datastore.MiniBatchSize;
+    reset(datastore);
+    datastore.MiniBatchSize = numSamples;
+    data = read(datastore);
+    % Get labels
+    labels = cellfun(@(label) label, data.responses);
+    % Get activations from layer
+    acts = activations(net, data, layer);
+    % Reshape the activations
+    actDims = size(acts);
+    acts = reshape(acts, actDims(4), prod(actDims(1:3)));
+    % Make t-sne analysis
+    tsne2D(acts, labels)
+    tsne3D(acts, labels)
+    tsneDistancesEval(acts, labels)
+    % Reset the dataset
+    datastore.MiniBatchSize = originalMinibatch;
+    reset(datastore);
+end
+
+%% FUNCTION TO PLOT T-SNE IN 2D
+function tsne2D(acts, cats)
+    newPoints = tsne(acts);
+    figure
+    gscatter(newPoints(:,1),newPoints(:,2),cats);
+end
+
+%% FUNCTION TO PLOT T-SNE IN 3D
+function tsne3D(acts, cats)
+    newPoints3D = tsne(acts,'Algorithm','barneshut','NumPCAComponents',50,'NumDimensions',3);
+    figure
+    scatter3(newPoints3D(:,1),newPoints3D(:,2),newPoints3D(:,3),15,cats,'filled');
+    view(-93,14)
+end
+
+%% FUNCTION TO PLOT T-SNE IN 2D WITH DIFERENT DISTANCES
+function tsneDistancesEval(acts, cats)
+    figure
+    % Cosine
+    rng('default')
+    Y = tsne(acts,'Algorithm','exact','Distance','cosine');
+    subplot(1,3,1)
+    gscatter(Y(:,1),Y(:,2),cats)
+    title('Cosine')
+    % Chebychev
+    rng('default') % for fair comparison
+    Y = tsne(acts,'Algorithm','exact','Distance','chebychev');
+    subplot(1,3,2)
+    gscatter(Y(:,1),Y(:,2),cats)
+    title('Chebychev')
+    % Euclidean
+    rng('default') % for fair comparison
+    Y = tsne(acts,'Algorithm','exact','Distance','euclidean');
+    subplot(1,3,3)
+    gscatter(Y(:,1),Y(:,2),cats)
+    title('Euclidean')
+end
 %% FUNCTION TO CALCULATE ACCURACY OF A DATASTORE
 function accuracy = calculateAccuracy(net, datastore)
     YPred = classify(net,datastore);
@@ -421,3 +534,121 @@ function calculateConfusionMatrix(net, datastore, datasetName)
         matrixChart.Title = ['Hand gestures - ' datasetName];
         sortClasses(matrixChart,clases);
 end
+
+%% EXTRA
+%{
+% Create layer graph
+    lgraph = layerGraph();
+    % Add layer branches
+    tempLayers = [
+        imageInputLayer(inputSize,"Name","data")
+        convolution2dLayer([3 3],16,"Name","conv1-3x3-s1","Padding",[1 1 1 1])
+        batchNormalizationLayer("Name","batchnorm1")
+        reluLayer("Name","relu1")
+        maxPooling2dLayer([2 2],"Name","pool1-2x2_s2","Stride",[2 2])];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        convolution2dLayer([1 1],32,"Name","Inception_2a-1x1")
+        reluLayer("Name","Inception_2a-1x1_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        convolution2dLayer([1 1],8,"Name","Inception_2a-5x5_reduce")
+        reluLayer("Name","Inception_2a-5x5_relu_reduce")
+        convolution2dLayer([5 5],16,"Name","Inception_2a-5x5","Padding",[2 2 2 2])
+        reluLayer("Name","Inception_2a-5x5_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        maxPooling2dLayer([3 3],"Name","Inception_2a-pool","Padding",[1 1 1 1])
+        convolution2dLayer([1 1],16,"Name","Inception_2a-pool_proj")
+        reluLayer("Name","Inception_2a-relu-pool_proj")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        convolution2dLayer([1 1],16,"Name","Inception_2a-3x3_reduce")
+        reluLayer("Name","Inception_2a-3x3_relu_reduce")
+        convolution2dLayer([3 3],32,"Name","Inception_2a-3x3","Padding",[1 1 1 1])
+        reluLayer("Name","Inception_2a-3x3_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        depthConcatenationLayer(4,"Name","depthcat_1")
+        maxPooling2dLayer([2 2],"Name","pool2-2x2_s2","Stride",[2 2])];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        maxPooling2dLayer([3 3],"Name","Inception_3a-pool","Padding",[1 1 1 1])
+        convolution2dLayer([1 1],16,"Name","Inception_3a-pool_proj")
+        reluLayer("Name","Inception_3a-relu-pool_proj")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        convolution2dLayer([1 1],32,"Name","Inception_3a-1x1")
+        reluLayer("Name","Inception_3a-1x1_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        convolution2dLayer([1 1],8,"Name","Inception_3a-5x5_reduce")
+        reluLayer("Name","Inception_3a-5x5_relu_reduce")
+        convolution2dLayer([5 5],16,"Name","Inception_3a-5x5","Padding",[2 2 2 2])
+        reluLayer("Name","Inception_3a-5x5_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        convolution2dLayer([1 1],16,"Name","Inception_3a-3x3_reduce")
+        reluLayer("Name","Inception_3a-3x3_relu_reduce")
+        convolution2dLayer([3 3],32,"Name","Inception_3a-3x3","Padding",[1 1 1 1])
+        reluLayer("Name","Inception_3a-3x3_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        depthConcatenationLayer(4,"Name","depthcat_2")
+        maxPooling2dLayer([2 2],"Name","pool3-2x2_s2","Stride",[2 2])];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        maxPooling2dLayer([3 3],"Name","Inception_4a-pool","Padding",[1 1 1 1])
+        convolution2dLayer([1 1],16,"Name","Inception_4a-pool_proj")
+        reluLayer("Name","Inception_4a-relu-pool_proj")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        convolution2dLayer([1 1],32,"Name","Inception_4a-1x1")
+        reluLayer("Name","Inception_4a-1x1_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        convolution2dLayer([1 1],16,"Name","Inception_4a-3x3_reduce")
+        reluLayer("Name","Inception_4a-3x3_relu_reduce")
+        convolution2dLayer([3 3],32,"Name","Inception_4a-3x3","Padding",[1 1 1 1])
+        reluLayer("Name","Inception_4a-3x3_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        convolution2dLayer([1 1],8,"Name","Inception_4a-5x5_reduce")
+        reluLayer("Name","Inception_4a-5x5_relu_reduce")
+        convolution2dLayer([5 5],16,"Name","Inception_4a-5x5","Padding",[2 2 2 2])
+        reluLayer("Name","Inception_4a-5x5_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+    tempLayers = [
+        depthConcatenationLayer(4,"Name","depthcat_3")
+        dropoutLayer(0.5,"Name","dropout")
+        fullyConnectedLayer(numClasses,"Name","fc")
+        softmaxLayer("Name","softmax")
+        classificationLayer("Name","classoutput")];
+    lgraph = addLayers(lgraph,tempLayers);
+    % Connect layer branches
+    lgraph = connectLayers(lgraph,"pool1-2x2_s2","Inception_2a-1x1");
+    lgraph = connectLayers(lgraph,"pool1-2x2_s2","Inception_2a-5x5_reduce");
+    lgraph = connectLayers(lgraph,"pool1-2x2_s2","Inception_2a-pool");
+    lgraph = connectLayers(lgraph,"pool1-2x2_s2","Inception_2a-3x3_reduce");
+    lgraph = connectLayers(lgraph,"Inception_2a-relu-pool_proj","depthcat_1/in4");
+    lgraph = connectLayers(lgraph,"Inception_2a-1x1_relu","depthcat_1/in1");
+    lgraph = connectLayers(lgraph,"Inception_2a-5x5_relu","depthcat_1/in3");
+    lgraph = connectLayers(lgraph,"Inception_2a-3x3_relu","depthcat_1/in2");
+    lgraph = connectLayers(lgraph,"pool2-2x2_s2","Inception_3a-pool");
+    lgraph = connectLayers(lgraph,"pool2-2x2_s2","Inception_3a-1x1");
+    lgraph = connectLayers(lgraph,"pool2-2x2_s2","Inception_3a-5x5_reduce");
+    lgraph = connectLayers(lgraph,"pool2-2x2_s2","Inception_3a-3x3_reduce");
+    lgraph = connectLayers(lgraph,"Inception_3a-1x1_relu","depthcat_2/in1");
+    lgraph = connectLayers(lgraph,"Inception_3a-5x5_relu","depthcat_2/in3");
+    lgraph = connectLayers(lgraph,"Inception_3a-3x3_relu","depthcat_2/in2");
+    lgraph = connectLayers(lgraph,"Inception_3a-relu-pool_proj","depthcat_2/in4");
+    lgraph = connectLayers(lgraph,"pool3-2x2_s2","Inception_4a-pool");
+    lgraph = connectLayers(lgraph,"pool3-2x2_s2","Inception_4a-1x1");
+    lgraph = connectLayers(lgraph,"pool3-2x2_s2","Inception_4a-3x3_reduce");
+    lgraph = connectLayers(lgraph,"pool3-2x2_s2","Inception_4a-5x5_reduce");
+    lgraph = connectLayers(lgraph,"Inception_4a-1x1_relu","depthcat_3/in1");
+    lgraph = connectLayers(lgraph,"Inception_4a-5x5_relu","depthcat_3/in3");
+    lgraph = connectLayers(lgraph,"Inception_4a-3x3_relu","depthcat_3/in2");
+    lgraph = connectLayers(lgraph,"Inception_4a-relu-pool_proj","depthcat_3/in4");
+
+%}
