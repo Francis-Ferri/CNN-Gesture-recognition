@@ -33,7 +33,7 @@ trainingEvalDatastore = createDatastore('Datastores/trainingSequence', labels);
 validationEvalDatastore = createDatastore('Datastores/validationSequence', labels);
 
 %% GENERATION OF SPECTROGRAMS TO CREATE THE MODEL
-parfor i = 1:length(users) % % parfor
+for i = 1:length(users) % % parfor
     % Get user samples
     [trainingSamples, validationSamples] = getTrainingTestingSamples(trainingPath, users(i));
     % Training data
@@ -81,7 +81,7 @@ function transformedSamples = generateData(samples)
     samplesKeys = fieldnames(samples);
     % Allocate space for the results
     transformedSamples = cell(length(samplesKeys), 3);
-    for i = 1: length(samplesKeys)
+    for i = 1:length(samplesKeys)
         % Get sample data
         sample = samples.(samplesKeys{i});
         emg = sample.emg;
@@ -119,15 +119,8 @@ end
 
 %%
 function signal = preprocessSignal(signal)
-    %{ 
-        Consideraciones preprocesado
-            filtro pasa bajos de 57 Hz - 50 - 10
-            Myo -1 +1
-            Normaliza por usuario
-            Normaliza toda la señal Por gesto y reescalas maxima amplitud para la señal de Wave in debe eqivaler a + 1 y la minima a --1
-            Promedio de los maximo  de los minimos y señales de testeo
-            Maximo y minimo
-    %}
+    [Fb, Fa] = butter(5, 0.1, 'low');
+    signal = preProcessEMGSegment(signal, Fa, Fb, 'abs');
 end
 
 %% generateSpectrograms
@@ -166,11 +159,11 @@ end
 %% FUNCTION TO GENERATE SPECTROGRAMS
 function [spectrograms,timestamps, params] = generateSpectrograms(signal)
     % Spectrogram parameters
-    FRECUENCIES = (0:100);
+    FRECUENCIES = (0:10);
     sampleFrecuency = 200;
     % Almost mandaory 200 to analize from 0 to 100 fecuencies
-    WINDOW = 200;
-    OVERLAPPING = 199; %floor(window*0.5);
+    WINDOW = 20;
+    OVERLAPPING = WINDOW -1;%floor(WINDOW*0.75); %floor(window*0.5);
     % Preallocate space for the spectrograms
     numCols = floor((length(signal)-OVERLAPPING)/(WINDOW-OVERLAPPING));
     spectrograms = zeros(length(FRECUENCIES), numCols, 8);
@@ -180,7 +173,7 @@ function [spectrograms,timestamps, params] = generateSpectrograms(signal)
         spectrograms(:,:,i) = ps;
     end
     % Get times
-    timestamps = round(t * WINDOW);
+    timestamps = round(t * sampleFrecuency);
     % Put parameters in structure
     params.numCols = numCols;
     params.window = WINDOW;
@@ -229,6 +222,33 @@ function saveSampleSeqInDatastore(samples, user, data_store)
         end
         save(savePath,'data');
     end
+end
+
+%% FUNCTION TO RECTIFY EMG
+function rectifiedEMG = rectifyEMG(rawEMG, rectFcn)
+    switch rectFcn
+        case 'square'
+            rectifiedEMG = rawEMG.^2;
+        case 'abs'
+            rectifiedEMG = abs(rawEMG);
+        case 'none'
+            rectifiedEMG = rawEMG;
+        otherwise
+            fprintf(['Wrong rectification function. Valid options are square, ',...
+                'abs and none']);
+    end
+end
+
+%% FUNCTION TO PREPROCESS EMG
+function EMGsegment_out = preProcessEMGSegment(EMGsegment_in, Fa, Fb, rectFcn)
+    if max( abs(EMGsegment_in(:)) ) > 1
+        drawnow;
+        EMGnormalized = EMGsegment_in/128;
+    else
+        EMGnormalized = EMGsegment_in;
+    end
+    EMGrectified = rectifyEMG(EMGnormalized, rectFcn);
+    EMGsegment_out = filtfilt(Fb, Fa, EMGrectified);
 end
 
 %% EXTRA THINGS

@@ -17,18 +17,22 @@ clear dataDir trainingDir
 %% SELECT ONE USER AND SAMPLE
 user = users(2);
 type = 'training'; %validation
-numSample = 34;
+numSample = 40;
 [signal, gestureName] = getSample(trainingPath, user, numSample, type);
+
+%% PREPORCESS THE SIGNAL
+[Fb, Fa] = butter(5, 0.1, 'low');
+signal = preProcessEMGSegment(signal, Fa, Fb, 'abs');
 
 %% PLOT SIGNAL AND SPECTROGRAMS OF EACH CHANNEL
 plotSignalChanels(user, type, numSample, gestureName, signal);
 plotSpectrogramChanels(user, type, numSample, gestureName, signal);
 
 %% SELECT A CHANEL TO PLOT THE SPECTROGRAM
-numChannel = 3;
+numChannel = 6;
 
 %% PLOT SIGNAL AND SPECTROGRAM OF CHANNEL
-plotSignalSpectrogramChanel(user, type, numSample, gestureName, signal, numChannel);
+ps = plotSignalSpectrogramChanel(user, type, numSample, gestureName, signal, numChannel);
 
 %% PLOT A 3D SPECTROGRAM OF A CHANNEL
 plot3DSpectrogram(user, type, numSample, gestureName, signal, numChannel)
@@ -102,7 +106,7 @@ function plotSpectrogramChanels(user, type, numSample, gestureName, signal)
 end
 
 %% FUNCTION TO PLOT SIGNAL AND SPECTROGRAM OF CHANNEL
-function plotSignalSpectrogramChanel(user, type, numSample, gestureName, signal, numChannel)
+function ps = plotSignalSpectrogramChanel(user, type, numSample, gestureName, signal, numChannel)
     channel = signal(:,numChannel);
     figure('Name', strcat(user, '-', type, '-',  int2str(numSample), '-', ...
         string(gestureName), '-', int2str(numChannel)))
@@ -129,13 +133,40 @@ end
 %% FUNCTION TO CALCUTLATE A SPECTROGRAM
 function [s, f, t, ps] = calculateSpectrogram(signal)
     % Spectrogram parameters
-    FRECUENCIES = (0:100);
+    FRECUENCIES = (0:10);
     sampleFrecuency = 200;
     % Almost mandaory 200 to analize from 0 to 100 fecuencies
-    WINDOW = 200;
-    OVERLAPPING = 0; %floor(window*0.5);
+    WINDOW = 20;
+    OVERLAPPING = WINDOW -1; %floor(WINDOW*0.75); %floor(window*0.5);
     % Plot the figure
     [s, f, t, ps] = spectrogram(signal, WINDOW, OVERLAPPING, FRECUENCIES, sampleFrecuency, 'yaxis');
+end
+
+%% FUNCTION TO RECTIFY EMG
+function rectifiedEMG = rectifyEMG(rawEMG, rectFcn)
+    switch rectFcn
+        case 'square'
+            rectifiedEMG = rawEMG.^2;
+        case 'abs'
+            rectifiedEMG = abs(rawEMG);
+        case 'none'
+            rectifiedEMG = rawEMG;
+        otherwise
+            fprintf(['Wrong rectification function. Valid options are square, ',...
+                'abs and none']);
+    end
+end
+
+%% FUNCTION TO PREPROCESS EMG
+function EMGsegment_out = preProcessEMGSegment(EMGsegment_in, Fa, Fb, rectFcn)
+    if max( abs(EMGsegment_in(:)) ) > 1
+        drawnow;
+        EMGnormalized = EMGsegment_in/128;
+    else
+        EMGnormalized = EMGsegment_in;
+    end
+    EMGrectified = rectifyEMG(EMGnormalized, rectFcn);
+    EMGsegment_out = filtfilt(Fb, Fa, EMGrectified);
 end
 
 %% EXTRA THINGS
