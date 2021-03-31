@@ -128,7 +128,7 @@ function [data] = generateFrames(signal, groundTruth, gestureName)
     % Creating spectrograms (ex: 101 x n x 8)
     [spectrograms, timestamps, params] = generateSpectrograms(signal);
     % Creating frames
-    NUMCOLSFRAME = 40;
+    NUMCOLSFRAME = 30;
     numFrames = floor(params.numCols / NUMCOLSFRAME);
     % Allocate space for the results
     data = cell(numFrames,3);
@@ -163,7 +163,7 @@ function [spectrograms,timestamps, params] = generateSpectrograms(signal)
     sampleFrecuency = 200;
     % Almost mandaory 200 to analize from 0 to 100 fecuencies
     WINDOW = 20;
-    OVERLAPPING = WINDOW -1;%floor(WINDOW*0.75); %floor(window*0.5);
+    OVERLAPPING = floor(WINDOW*0.5); %floor(WINDOW*0.75); %floor(WINDOW*0.5); % WINDOW -1
     % Preallocate space for the spectrograms
     numCols = floor((length(signal)-OVERLAPPING)/(WINDOW-OVERLAPPING));
     spectrograms = zeros(length(FRECUENCIES), numCols, 8);
@@ -234,13 +234,13 @@ function rectifiedEMG = rectifyEMG(rawEMG, rectFcn)
         case 'none'
             rectifiedEMG = rawEMG;
         otherwise
-            fprintf(['Wrong rectification function. Valid options are square, ',...
-                'abs and none']);
+            fprintf('Wrong rectification function. Valid options are square, abs and none');
     end
 end
 
 %% FUNCTION TO PREPROCESS EMG
 function EMGsegment_out = preProcessEMGSegment(EMGsegment_in, Fa, Fb, rectFcn)
+    % Normalization
     if max( abs(EMGsegment_in(:)) ) > 1
         drawnow;
         EMGnormalized = EMGsegment_in/128;

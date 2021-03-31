@@ -137,7 +137,7 @@ function [s, f, t, ps] = calculateSpectrogram(signal)
     sampleFrecuency = 200;
     % Almost mandaory 200 to analize from 0 to 100 fecuencies
     WINDOW = 20;
-    OVERLAPPING = WINDOW -1; %floor(WINDOW*0.75); %floor(window*0.5);
+    OVERLAPPING = floor(WINDOW*0.5); %floor(WINDOW*0.75); %floor(WINDOW*0.5); % WINDOW -1
     % Plot the figure
     [s, f, t, ps] = spectrogram(signal, WINDOW, OVERLAPPING, FRECUENCIES, sampleFrecuency, 'yaxis');
 end
@@ -152,13 +152,13 @@ function rectifiedEMG = rectifyEMG(rawEMG, rectFcn)
         case 'none'
             rectifiedEMG = rawEMG;
         otherwise
-            fprintf(['Wrong rectification function. Valid options are square, ',...
-                'abs and none']);
+            fprintf('Wrong rectification function. Valid options are square, abs and none');
     end
 end
 
 %% FUNCTION TO PREPROCESS EMG
 function EMGsegment_out = preProcessEMGSegment(EMGsegment_in, Fa, Fb, rectFcn)
+    % Normalization
     if max( abs(EMGsegment_in(:)) ) > 1
         drawnow;
         EMGnormalized = EMGsegment_in/128;
