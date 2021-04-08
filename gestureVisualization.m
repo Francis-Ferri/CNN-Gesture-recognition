@@ -208,17 +208,21 @@ end
 function visualizeFrames(signal, sample, user, numSample,channel, type)
     % Frame onfigurations
     FRAME_WINDOW = 300;
-    FRAME_OVERLAPPING = 15;
+    WINDOW_STEP = 15;
     TOLERANCE_WINDOW = 0.75;
     TOLERNCE_GESTURE = 0.9;
     % Inicialization
     groundTruth = sample.groundTruth;
     numGesturePoints = sample.groundTruthLength;
-    inicio = 1;
+    numWindows = floor((length(signal)-FRAME_WINDOW) /WINDOW_STEP)+1;
+    
     plotPosition = 1;
-    figure('Name', strcat(user, '-', type, '-',  int2str(numSample), '-', string(sample.gesture), '-', int2str(channel)))
-    while inicio + FRAME_WINDOW <= length(signal)
-        finish = inicio + FRAME_WINDOW -1;
+    figure('Name', strcat(user, '-', type, '-',  int2str(numSample), '-', string(sample.gesture), '-', int2str(channel)));
+    for i = 1:numWindows
+        traslation = ((i-1)*WINDOW_STEP);
+        inicio = 1 + traslation;
+        finish = FRAME_WINDOW + traslation;
+        
         timestamp = inicio + floor(FRAME_WINDOW/2);
         frameGroundTruth = groundTruth(inicio: finish);
         totalOnes = sum(frameGroundTruth == 1);
@@ -231,7 +235,6 @@ function visualizeFrames(signal, sample, user, numSample,channel, type)
             end
             plotPosition = plotPosition + 1;
         end
-        inicio = inicio + FRAME_OVERLAPPING;
     end
 end
 
