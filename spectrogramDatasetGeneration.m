@@ -36,7 +36,9 @@ for i = 1:length(users) % % parfor
 end
 clear i validationSamples transformedSamplesValidation
 
-%% DEFINE THE DIRECTORIES WHERE THE FRAMES WILL BE FOUND
+
+%% INCLUDE NOGESTURE
+% Define the directories where the frames will be found
 dataDir = 'Datastores';
 datastores = {'training'; 'validation'};
 
