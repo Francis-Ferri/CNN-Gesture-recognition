@@ -141,13 +141,17 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
         end
         
         function dsNew = setDataAmount(ds, percentage)
-            % Get the limit of the new division
-            numObservations = ds.NumObservations;
-            newLimit = floor(numObservations * percentage);
-            numClassSamples = floor(newLimit/ds.NumClasses);
-            % Set the new number of files
-            dsNew = matchSampleNumberInOrder(ds, numClassSamples);
-            dsNew = shuffle(dsNew);
+            if percentage == 1 
+                dsNew = ds;
+            else
+                % Get the limit of the new division
+                numObservations = ds.NumObservations;
+                newLimit = floor(numObservations * percentage);
+                numClassSamples = floor(newLimit/ds.NumClasses);
+                % Set the new number of files
+                dsNew = matchSampleNumberInOrder(ds, numClassSamples);
+                dsNew = shuffle(dsNew);
+            end
         end
     end
     
