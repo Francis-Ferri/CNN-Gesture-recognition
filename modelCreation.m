@@ -8,12 +8,12 @@ dataDirValidation = fullfile('Datastores', 'validation');
 
 %% THE DATASTORES RE CREATED
 % The classes are defined
-withNoGesture = false;
+withNoGesture = true;
 classes = setNogestureUse(withNoGesture);
 trainingDatastore = SpectrogramDatastore(dataDirTraining, withNoGesture);
 validationDatastore = SpectrogramDatastore(dataDirValidation, withNoGesture);
 %dataSample = preview(trainingDatastore);
-clear dataDirTraining dataDirValidation withNoGesture
+clear dataDirTraining dataDirValidation
 
 %% THE INPUT DIMENSIONS ARE DEFINED
 inputSize = trainingDatastore.DataDimensions;
@@ -43,7 +43,7 @@ clear numClasses
 
 %% THE OPTIONS ARE DIFINED
 %gpuDevice(1);
-maxEpochs = 3;%10
+maxEpochs = 1;%10
 miniBatchSize = 32;%1024
 options = trainingOptions('adam', ...
     'InitialLearnRate', 0.001, ...
@@ -81,9 +81,18 @@ strAccValidation = ['Validation accuracy: ', num2str(accValidation)];
 strAccTesting = ['Testing accuracy: ', num2str(accTesting)];
 % The amount of training-validation-tests data is printed
 fprintf('\n%s\n%s\n%s\n', strAccTraining, strAccValidation, strAccTesting);
+clear accTraining accValidation accTesting strAccTraining strAccValidation strAccTesting
+
+%% CONFUSION MATRIX FOR EACH DATASET
+calculateConfusionMatrix(net, trainingDatastore, 'training', withNoGesture);
+calculateConfusionMatrix(net, validationDatastore, 'validation', withNoGesture);
+calculateConfusionMatrix(net, testingDatastore, 'testing', withNoGesture);
 
 %% SAVE MODEL
-save(['model_', datestr(now,'dd-mm-yyyy_HH-MM-ss')], 'net');
+if ~exist("models", 'dir')
+   mkdir("models");
+end
+save(['models/model_', datestr(now,'dd-mm-yyyy_HH-MM-ss')], 'net');
 
 %% FUCNTION TO SET THE USE OF NOGESTURE
 function classes = setNogestureUse(withNoGesture)
@@ -221,4 +230,22 @@ function accuracy = calculateAccuracy(net, datastore)
     YValidation = datastore.Labels;
     % Calculate accuracy
     accuracy = sum(YPred == YValidation)/numel(YValidation);
+end
+
+%% FUNCTION TO CALCULATE AD PLOT A CONFUSION MATRIX
+function calculateConfusionMatrix(net, datastore, datasetName, withNoGesture)
+    % Get predictions of each frame
+    predLabels = classify(net, datastore);
+    realLabels = datastore.Labels;
+    % Stablish clases
+    classes = categorical(setNogestureUse(withNoGesture));
+    % Create the confusion matrix
+    confusionMatrix = confusionmat(realLabels, predLabels, 'Order', classes);
+    figure('Name', ['Confusion Matrix - ' datasetName])
+        matrixChart = confusionchart(confusionMatrix, classes);
+        % Chart options
+        matrixChart.ColumnSummary = 'column-normalized';
+        matrixChart.RowSummary = 'row-normalized';
+        matrixChart.Title = ['Hand gestures - ' datasetName];
+        sortClasses(matrixChart,classes);
 end

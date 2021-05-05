@@ -7,7 +7,7 @@ dataDir = 'EMG_EPN612_Dataset';
 trainingDir = 'trainingJSON';
 
 %% GET THE USERS DIRECTORIES
-[users, trainingPath] = getUsers(dataDir, trainingDir);
+[users, trainingPath] = SharedFunctions.getUsers(dataDir, trainingDir);
 clear dataDir trainingDir
 
 %% SELECT ONE USER AND SAMPLE
@@ -17,13 +17,12 @@ numSample = 40;
 if numSample > 25
     sample = getSample(trainingPath, user, numSample, type);
 else
-    disp('No se pueden seleccionar muestras no gesture');
+    disp('Not allowed to select noGesture samples');
 end
 
 %% PREPORCESS THE SIGNAL
-% Wn = Fc/(Fs/2)
-[Fb, Fa] = butter(5, 0.1, 'low');
-filteredSignal = preProcessEMGSegment(sample.signal, Fa, Fb, 'abs');
+[Fb, Fa] = butter(5, 0.1, 'low'); % Wn = Fc/(Fs/2)
+filteredSignal = SharedFunctions.preProcessEMGSegment(sample.signal, Fa, Fb, 'abs');
 clear Fb Fa
 
 %% PLOT SIGNAL AND SPECTROGRAMS OF EACH CHANNEL
@@ -39,11 +38,11 @@ numChannel = 6;
 plot3DSpectrogram(user, type, numSample, sample.gesture, filteredSignal, numChannel);
 
 %% VISUALIZE FRAMES
-channel = 3;
-visualizeFrames(filteredSignal, sample, user, numSample,channel, 'signal');
-visualizeFrames(filteredSignal, sample, user, numSample,channel, 'spectrogram');
+numChannel = 3;
+visualizeFrames(filteredSignal, sample, user, numSample, numChannel, 'signal');
+visualizeFrames(filteredSignal, sample, user, numSample, numChannel, 'spectrogram');
 
-%% VISUUALIZE EACH CHENNEL OF A FRAME
+%% VISUALIZE EACH CHENNEL OF A FRAME
 FRAME_WINDOW = 300;
 groundTruthMid = floor((sample.groundTruthIdx(2) + sample.groundTruthIdx(1)) / 2);
 % Calculate the start and end points
@@ -53,15 +52,7 @@ signal = filteredSignal(start:finish-1, :);
 % Plot the signal and spectrogram for each channel
 plotSignalChanels(user, type, numSample, sample.gesture, signal);
 plotSpectrogramChanels(user, type, numSample, sample.gesture, signal);
-
-%% GET THE USER LIST
-function [users, dataPath] = getUsers(dataDir, subDir)
-    dataPath = fullfile(dataDir, subDir);
-    users = ls(dataPath);
-    users = strtrim(string(users(3:length(users),:)));
-    rng(9); % seed
-    users = users(randperm(length(users)));
-end
+clear groundTruthMid start finish signal
 
 %% GET TRAINING AND TESTING SAMPLES FOR AN USER
 function [trainingSamples, testingSamples] = getTrainingTestingSamples(path, user)
@@ -71,15 +62,6 @@ function [trainingSamples, testingSamples] = getTrainingTestingSamples(path, use
     % Extract samples
     trainingSamples = jsonData.trainingSamples;
     testingSamples = jsonData.testingSamples;
-end
-
-%% FUNCTION TO GET THE EMG SIGNAL
-function signal = getSignal(emg)
-    channels = fieldnames(emg); % get chanels
-    signal = zeros(length(emg.(channels{1})), length(channels)); % ex: 1000 x 8
-    for j = 1:length(channels)
-        signal(:,j) = emg.(channels{j});
-    end
 end
 
 %% GET SPECIFIC SAMPLE FROM A USER
@@ -95,38 +77,11 @@ function sampleData = getSample(dataPath, user, numSample, type)
     sample = samples.(samplesKeys{numSample});
     % Get signal data
     sampleData.gesture = sample.gestureName;
-    sampleData.signal = getSignal(sample.emg);
+    sampleData.signal = SharedFunctions.getSignal(sample.emg);
     sampleData.groundTruth = sample.groundTruth;
     groundTruthIdx = sample.groundTruthIndex;
     sampleData.groundTruthLength = groundTruthIdx(2) - groundTruthIdx(1);
     sampleData.groundTruthIdx = sample.groundTruthIndex;
-end
-
-%% FUNCTION TO RECTIFY EMG
-function rectifiedEMG = rectifyEMG(rawEMG, rectFcn)
-    switch rectFcn
-        case 'square'
-            rectifiedEMG = rawEMG.^2;
-        case 'abs'
-            rectifiedEMG = abs(rawEMG);
-        case 'none'
-            rectifiedEMG = rawEMG;
-        otherwise
-            fprintf('Wrong rectification function. Valid options are square, abs and none');
-    end
-end
-
-%% FUNCTION TO PREPROCESS EMG
-function EMGsegment_out = preProcessEMGSegment(EMGsegment_in, Fa, Fb, rectFcn)
-    % Normalization
-    if max( abs(EMGsegment_in(:)) ) > 1
-        drawnow;
-        EMGnormalized = EMGsegment_in/128;
-    else
-        EMGnormalized = EMGsegment_in;
-    end
-    EMGrectified = rectifyEMG(EMGnormalized, rectFcn);
-    EMGsegment_out = filtfilt(Fb, Fa, EMGrectified);
 end
 
 %% FUNCTION TO PLOT SIGNAL IN EACH CHANNEL
@@ -222,7 +177,6 @@ function visualizeFrames(signal, sample, user, numSample,channel, type)
         traslation = ((i-1)*WINDOW_STEP);
         inicio = 1 + traslation;
         finish = FRAME_WINDOW + traslation;
-        
         timestamp = inicio + floor(FRAME_WINDOW/2);
         frameGroundTruth = groundTruth(inicio: finish);
         totalOnes = sum(frameGroundTruth == 1);

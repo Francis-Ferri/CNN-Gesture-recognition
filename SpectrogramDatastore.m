@@ -28,11 +28,11 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
         function ds = SpectrogramDatastore(folder, withNoGesture)
             % Create a file datastore.
             fds = fileDatastore(folder, ...
-                'ReadFcn',@readSequence, ...
+                'ReadFcn',@SharedFunctions.readFile, ...
                 'IncludeSubfolders',true);
             ds.Datastore = fds;
             % Read labels from folder names
-            [labels, numObservations] = createLabels(fds.Files, withNoGesture);
+            [labels, numObservations] = SharedFunctions.createLabels(fds.Files, withNoGesture);
             ds.Labels = labels;
             ds.NumClasses = numel(unique(labels));
             % Determine sequence dimension
@@ -124,12 +124,17 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
             % Create a copy of datastore
             dsNew = copy(ds);
             fds = dsNew.Datastore;
+            % Shuffle tthe filedatastore
+            [fds, idxs] = SharedFunctions.shuffle(fds);
+            
             % Shuffle files and their corresponding labels
-            numObservations = dsNew.NumObservations;
-            rng(9); % seed
-            idx = randperm(numObservations);
-            fds.Files = fds.Files(idx);
-            dsNew.Labels = dsNew.Labels(idx);
+            %numObservations = dsNew.NumObservations;
+            %rng(9); % seed
+            %idx = randperm(numObservations);
+            %fds.Files = fds.Files(idx);
+            
+            dsNew.Datastore = fds;
+            dsNew.Labels = dsNew.Labels(idxs);
         end
         
         function dsNew = balanceGestureSamples(ds)
@@ -180,27 +185,6 @@ end
 function data = readSequence(filename)
     % Load a Matlab file
     data = load(filename);
-end
-
-%% FUNCION PARA CREAR ETIQUETAS
-function [labels, numObservations] = createLabels(files, withNoGesture)
-    % Get the number of files
-    numObservations = numel(files);
-    % Allocate spacce for labels
-    labels = cell(numObservations,1);
-    parfor i = 1:numObservations
-        file = files{i};
-        filepath = fileparts(file); % ../datastore/class
-        % The last part of the path is the label
-        [~,label] = fileparts(filepath); % [../datastore, class]
-        labels{i,1} = label;
-    end
-    if withNoGesture
-        categories = {'fist', 'noGesture', 'open', 'pinch','waveIn', 'waveOut'};
-    else
-        categories = {'fist', 'open', 'pinch','waveIn', 'waveOut'};
-    end
-    labels = categorical(labels, categories);
 end
 
 %%
