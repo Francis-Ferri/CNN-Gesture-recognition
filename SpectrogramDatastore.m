@@ -20,7 +20,6 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
     end
     
     properties(Access = private)
-        % This property is inherited from Datastore
         CurrentFileIndex
     end
     
@@ -28,11 +27,11 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
         function ds = SpectrogramDatastore(folder, withNoGesture)
             % Create a file datastore.
             fds = fileDatastore(folder, ...
-                'ReadFcn',@SharedFunctions.readFile, ...
+                'ReadFcn',@readDatastore, ...
                 'IncludeSubfolders',true);
             ds.Datastore = fds;
             % Read labels from folder names
-            [labels, numObservations] = SharedFunctions.createLabels(fds.Files, withNoGesture);
+            [labels, numObservations] = Shared.createLabels(fds.Files, withNoGesture);
             ds.Labels = labels;
             ds.NumClasses = numel(unique(labels));
             % Determine sequence dimension
@@ -125,7 +124,7 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
             dsNew = copy(ds);
             fds = dsNew.Datastore;
             % Shuffle tthe filedatastore
-            [fds, idxs] = SharedFunctions.shuffle(fds);
+            [fds, idxs] = Shared.shuffle(fds);
             
             % Shuffle files and their corresponding labels
             %numObservations = dsNew.NumObservations;
@@ -182,7 +181,7 @@ end
 
 
 %% FUNCTION TO READ DATA FROM FILE
-function data = readSequence(filename)
+function data = readDatastore(filename)
     % Load a Matlab file
     data = load(filename);
 end

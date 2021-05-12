@@ -4,16 +4,16 @@
 
 %% DEFINE THE DIRECTORIES WHERE THE DATA WILL BE FOUND
 dataDir = 'Datastores';
-datastores = {'training'; 'validation'};
+datastores = {'training'; 'validation'; 'testing'};
 
 %% CREATE A FILEDATASTORE
-datastore = datastores{1};
+datastore = datastores{3};
 folder = fullfile(dataDir, datastore);
 % Create a file datastore.
 fds = fileDatastore(folder, ...
-    'ReadFcn',@SharedFunctions.readFile, ...
+    'ReadFcn',@Shared.readFile, ...
     'IncludeSubfolders',true);
-[fds, idxs] = SharedFunctions.shuffle(fds);
+fds = Shared.shuffle(fds);
 clear folder
 
 %% DEFINE THE START AND MINIBATCH SIZE
@@ -42,7 +42,7 @@ function [frames, labels, start] = readFrames(fds, start, miniBatchSize)
         filepath = fileparts(files{i,1}); % ../datastore/class
         % The last part of the path is the label
         [~,label] = fileparts(filepath); % [../datastore, class]
-        frame = SharedFunctions.readFile(files{i,1});
+        frame = Shared.readFile(files{i,1});
         frames{i,1} = frame;
         labels{i,1} = label;
     end

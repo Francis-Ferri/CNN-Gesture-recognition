@@ -7,7 +7,7 @@ dataDir = 'EMG_EPN612_Dataset';
 trainingDir = 'trainingJSON';
 
 %% GET THE USERS DIRECTORIES
-[users, trainingPath] = SharedFunctions.getUsers(dataDir, trainingDir);
+[users, trainingPath] = Shared.getUsers(dataDir, trainingDir);
 clear dataDir trainingDir
 
 %% SELECT ONE USER AND SAMPLE
@@ -17,12 +17,12 @@ numSample = 40;
 if numSample > 25
     sample = getSample(trainingPath, user, numSample, type);
 else
-    disp('Not allowed to select noGesture samples');
+    disp('Not allowed to select noGesture samples and samples outside the bounderies [0:125]');
 end
 
 %% PREPORCESS THE SIGNAL
 [Fb, Fa] = butter(5, 0.1, 'low'); % Wn = Fc/(Fs/2)
-filteredSignal = SharedFunctions.preProcessEMGSegment(sample.signal, Fa, Fb, 'abs');
+filteredSignal = Shared.preProcessEMGSegment(sample.signal, Fa, Fb, 'abs');
 clear Fb Fa
 
 %% PLOT SIGNAL AND SPECTROGRAMS OF EACH CHANNEL
@@ -43,31 +43,20 @@ visualizeFrames(filteredSignal, sample, user, numSample, numChannel, 'signal');
 visualizeFrames(filteredSignal, sample, user, numSample, numChannel, 'spectrogram');
 
 %% VISUALIZE EACH CHENNEL OF A FRAME
-FRAME_WINDOW = 300;
 groundTruthMid = floor((sample.groundTruthIdx(2) + sample.groundTruthIdx(1)) / 2);
 % Calculate the start and end points
-start = groundTruthMid - floor(FRAME_WINDOW/2);
-finish = groundTruthMid + floor(FRAME_WINDOW/2);
+start = groundTruthMid - floor(Shared.FRAME_WINDOW / 2);
+finish = groundTruthMid + floor(Shared.FRAME_WINDOW / 2);
 signal = filteredSignal(start:finish-1, :);
 % Plot the signal and spectrogram for each channel
 plotSignalChanels(user, type, numSample, sample.gesture, signal);
 plotSpectrogramChanels(user, type, numSample, sample.gesture, signal);
 clear groundTruthMid start finish signal
 
-%% GET TRAINING AND TESTING SAMPLES FOR AN USER
-function [trainingSamples, testingSamples] = getTrainingTestingSamples(path, user)
-    filePath = fullfile(path, user, strcat(user, '.json'));
-    jsonFile = fileread(filePath);
-    jsonData = jsondecode(jsonFile);
-    % Extract samples
-    trainingSamples = jsonData.trainingSamples;
-    testingSamples = jsonData.testingSamples;
-end
-
 %% GET SPECIFIC SAMPLE FROM A USER
 function sampleData = getSample(dataPath, user, numSample, type)
     % Get user samples
-    [trainingSamples, validationSamples] = getTrainingTestingSamples(dataPath, user);
+    [trainingSamples, validationSamples] = Shared.getTrainingTestingSamples(dataPath, user);
     samplesKeys = fieldnames(trainingSamples); % Same for validation
     if isequal(type, 'validation')
         samples = validationSamples;
@@ -77,7 +66,7 @@ function sampleData = getSample(dataPath, user, numSample, type)
     sample = samples.(samplesKeys{numSample});
     % Get signal data
     sampleData.gesture = sample.gestureName;
-    sampleData.signal = SharedFunctions.getSignal(sample.emg);
+    sampleData.signal = Shared.getSignal(sample.emg);
     sampleData.groundTruth = sample.groundTruth;
     groundTruthIdx = sample.groundTruthIndex;
     sampleData.groundTruthLength = groundTruthIdx(2) - groundTruthIdx(1);
@@ -96,14 +85,10 @@ end
 
 %% FUNCTION TO CALCUTLATE A SPECTROGRAM
 function [s, f, t, ps] = calculateSpectrogram(signal)
-    % Spectrogram parameters
-    FRECUENCIES = (0:12);
     sampleFrecuency = 200;
-    % Almost mandaory 200 to analize from 0 to 100 fecuencies
-    WINDOW = 24;
-    OVERLAPPING = floor(WINDOW*0.5); %floor(WINDOW*0.75); %floor(WINDOW*0.5); % WINDOW -1
     % Plot the figure
-    [s, f, t, ps] = spectrogram(signal, WINDOW, OVERLAPPING, FRECUENCIES, sampleFrecuency, 'yaxis');
+    [s, f, t, ps] = spectrogram(signal, Shared.WINDOW, Shared.OVERLAPPING, ...
+        Shared.FRECUENCIES, sampleFrecuency, 'yaxis');
 end
 
 %% FUNCTION TO PLOT THE SPECTOGRAMS OF EACH CHANNEL
@@ -161,26 +146,22 @@ end
 
 %% FUNCTION TO VISUALIZE FRAMES
 function visualizeFrames(signal, sample, user, numSample,channel, type)
-    % Frame onfigurations
-    FRAME_WINDOW = 300;
-    WINDOW_STEP = 15;
-    TOLERANCE_WINDOW = 0.75;
-    TOLERNCE_GESTURE = 0.9;
     % Inicialization
     groundTruth = sample.groundTruth;
     numGesturePoints = sample.groundTruthLength;
-    numWindows = floor((length(signal)-FRAME_WINDOW) /WINDOW_STEP)+1;
-    
+    numWindows = floor((length(signal) - Shared.FRAME_WINDOW) / Shared.WINDOW_STEP) + 1;
+    % Figure creation
     plotPosition = 1;
     figure('Name', strcat(user, '-', type, '-',  int2str(numSample), '-', string(sample.gesture), '-', int2str(channel)));
     for i = 1:numWindows
-        traslation = ((i-1)*WINDOW_STEP);
+        traslation = ((i-1) * Shared.WINDOW_STEP);
         inicio = 1 + traslation;
-        finish = FRAME_WINDOW + traslation;
-        timestamp = inicio + floor(FRAME_WINDOW/2);
+        finish = Shared.FRAME_WINDOW + traslation;
+        timestamp = inicio + floor(Shared.FRAME_WINDOW/2);
         frameGroundTruth = groundTruth(inicio: finish);
         totalOnes = sum(frameGroundTruth == 1);
-        if totalOnes >= FRAME_WINDOW * TOLERANCE_WINDOW || totalOnes >= numGesturePoints * TOLERNCE_GESTURE
+        if totalOnes >= Shared.FRAME_WINDOW * Shared.TOLERANCE_WINDOW || ...
+                totalOnes >= numGesturePoints * Shared.TOLERNCE_GESTURE
             frameSignal = signal(inicio:finish, channel);
             if isequal(type, 'signal')
                 subplotSignal(plotPosition, frameSignal, timestamp)

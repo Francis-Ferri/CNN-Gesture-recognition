@@ -7,11 +7,16 @@ dataDir = 'EMG_EPN612_Dataset'; %'CEPRA_2019_13_DATASET_FINAL'
 trainingDir = 'trainingJSON'; %'training'
 
 %% GET THE USERS DIRECTORIES
-[users, trainingPath] = SharedFunctions.getUsers(dataDir, trainingDir);
-clear dataDir trainingDir
+[users, trainingPath] = Shared.getUsers(dataDir, trainingDir);
+% Divide in two datasets
+limit = length(users)- Shared.numTestUsers;
+usersTrainVal = users(1:limit, 1);
+usersTest = users(limit+1:length(users), 1);
+clear dataDir trainingDir users numTestUsers limit
 
 %%                      BORRAR ESTO AL ACABAR SOLO ES PARA HACER PRUEBAS CON PORCIONES
-users = users(1:1);
+usersTrainVal = usersTrainVal(1:1);
+usersTest = usersTest(1:1);
 
 %% LOAD THE MODEL
 modelFile = 'model_26-04-2021_09-43-42';
@@ -19,17 +24,19 @@ modelFileName = fullfile('models', modelFile);
 model = load(modelFileName).net;
 clear modelFile modelFileName
 
-%% PREALLOCATE SPACE FOR RESULTS
-numSamplesUser = 150;
+%% PREALLOCATE SPACE FOR RESULTS TRAINING AND VALIDATION
 % Allocate space to save the results
-[classifications, recognitions, overlapings, procesingTimes] = preallocateResults(length(users), numSamplesUser);
-[classificationsVal, recognitionsVal, overlapingsVal, procesingTimesVal] = preallocateResults(length(users), numSamplesUser);
-clear numObservations
+% Training
+[classifications, recognitions, overlapings, procesingTimes] =  ... 
+    preallocateResults(length(usersTrainVal));
+% Validation
+[classificationsVal, recognitionsVal, overlapingsVal, procesingTimesVal] = ... 
+    preallocateResults(length(usersTrainVal));
 
-%% EVALUATE EACH USER
-for i = 1:length(users) % % parfor
+%% EVALUATE EACH USER FOR TRAINING AND VALIDATION
+for i = 1:length(usersTrainVal) % % parfor
     % Get user samples
-    [trainingSamples, validationSamples] = SharedFunctions.getTrainingTestingSamples(trainingPath, users(i));
+    [trainingSamples, validationSamples] = Shared.getTrainingTestingSamples(trainingPath, usersTrainVal(i));
     % Transform samples
     transformedSamplesTraining = transformSamples(trainingSamples);
     userResults = evaluateSamples(transformedSamplesTraining, model);
@@ -47,19 +54,64 @@ for i = 1:length(users) % % parfor
     overlapingsVal(i, :) = userResults.overlapings;
     procesingTimesVal(i, :) = userResults.procesingTimes;
 end
-disp('Resultados de datos de entrenamiento');
-calculateValidationResults(classifications, recognitions, overlapings, procesingTimes);
-disp('Resultados de datos de validacion');
-calculateValidationResults(classificationsVal, recognitionsVal, overlapingsVal, procesingTimesVal);
+disp('Training data results');
+[dataTrain, resultsTrain] = calculateValidationResults(classifications, recognitions, ... 
+    overlapings, procesingTimes);
+disp('Validacion data results');
+[dataValidation, resultsValidation] = calculateValidationResults(classificationsVal, ... 
+    recognitionsVal, overlapingsVal, procesingTimesVal);
 clear i trainingSamples validationSamples transformedSamplesValidation
+clear classifications recognitions overlapings procesingTimes
+clear classificationsVal recognitionsVal overlapingsVal procesingTimesVal
+
+%% PREALLOCATE SPACE FOR RESULTS TESTING
+% Testing - users training samples
+[classificationsTest1, recognitionsTest1, overlapingsTest1, procesingTimesTest1] =  ...
+    preallocateResults(length(usersTest));
+% Testing - users validation samples
+[classificationsTest2, recognitionsTest2, overlapingsTest2, procesingTimesTest2] =  ...
+    preallocateResults(length(usersTest));
+
+%% EVALUATE EACH USER FOR TESTING
+for i = 1:length(usersTest) 
+     % Get user samples
+    [trainingSamples, validationSamples] = Shared.getTrainingTestingSamples(trainingPath, usersTest(i));
+    % Transform samples
+    transformedSamplesTraining = transformSamples(trainingSamples);
+    userResults = evaluateSamples(transformedSamplesTraining, model);
+    % Set user's training results
+    classificationsTest1(i, :) = userResults.classifications;
+    recognitionsTest1(i, :) = userResults.recognitions;
+    overlapingsTest1(i, :) = userResults.overlapings;
+    procesingTimesTest1(i, :) = userResults.procesingTimes;
+    % Validation data
+    transformedSamplesValidation = transformSamples(validationSamples);
+    userResults = evaluateSamples(transformedSamplesValidation, model);
+    % Set user's training results
+    classificationsTest2(i, :) = userResults.classifications;
+    recognitionsTest2(i, :) = userResults.recognitions;
+    overlapingsTest2(i, :) = userResults.overlapings;
+    procesingTimesTest2(i, :) = userResults.procesingTimes;
+end
+classificationsTest = [classificationsTest1; classificationsTest2];
+recognitionsTest = [recognitionsTest1; recognitionsTest2];
+overlapingsTest = [overlapingsTest1; overlapingsTest2];
+procesingTimesTest = [procesingTimesTest1; procesingTimesTest2];
+disp('Testing data results');
+[dataTest, resultsTest] = calculateValidationResults(classificationsTest, ... 
+    recognitionsTest, overlapingsTest, procesingTimesTest);
+clear i trainingSamples validationSamples transformedSamplesValidation
+clear classificationsTest1 recognitionsTest1 overlapingsTest1 procesingTimesTest1
+clear classificationsTest2 recognitionsTest2 overlapingsTest2 procesingTimesTest2
+clear classificationsTest recognitionsTest overlapingsTest procesingTimesTest
 
 %% FUCTION TO PREALLOCATE SPACE FOR VALIDATION LIBRARY RESULT
-function [clasifications, recognitions, overlapings, procesingTimes] = preallocateResults(numUsers, numSamplesUser)
+function [clasifications, recognitions, overlapings, procesingTimes] = preallocateResults(numUsers)
     % Allocate space to save the results
-    clasifications = zeros(numUsers, numSamplesUser);
-    recognitions = zeros(numUsers, numSamplesUser);
-    overlapings = zeros(numUsers, numSamplesUser);
-    procesingTimes = zeros(numUsers, numSamplesUser);
+    clasifications = zeros(numUsers, Shared.numSamplesUser);
+    recognitions = zeros(numUsers, Shared.numSamplesUser);
+    overlapings = zeros(numUsers, Shared.numSamplesUser);
+    procesingTimes = zeros(numUsers, Shared.numSamplesUser);
 end
 
 %% CREAR DATOS DE ESPECTROGRAMAS
@@ -74,7 +126,7 @@ function transformedSamples = transformSamples(samples)
         emg = sample.emg;
         gestureName = sample.gestureName;
         % Get signal from sample
-        signal = SharedFunctions.getSignal(emg);
+        signal = Shared.getSignal(emg);
         % Adding the transformed data
         transformedSamples{i,1} = signal;
         transformedSamples{i,2} = gestureName;
@@ -115,35 +167,30 @@ function userResults = evaluateSamples(samples, model)
         % Postprocess the sample
         labels = setWrongLabelsToNoGestute(labels, char(class));
         % Prepare response
-        response.vectorOfLabels = labels;
-        response.vectorOfTimePoints = timestamps;
-        response.vectorOfProcessingTimes = processingTimes;
-        response.class = class;
+        response = struct('vectorOfLabels', labels, 'vectorOfTimePoints', timestamps, ... 
+            'vectorOfProcessingTimes', processingTimes, 'class', class);
         % Send to validation toolbox
         result = evalRecognition(repInfo, response);
         % Save results
         classifications(i) = result.classResult;
         if ~isequal(gesture,'noGesture')
-            size(result.recogResult)
             recognitions(i) = result.recogResult;
             overlapings(i) = result.overlappingFactor;
         end
         procesingTimes(i) = mean(processingTimes); %time
         % Set User Results
-        userResults.classifications = classifications;
-        userResults.recognitions = recognitions;
-        userResults.overlapings = overlapings;
-        userResults.procesingTimes = procesingTimes;
+        userResults = struct('classifications', classifications,  'recognitions', ... 
+            recognitions, 'overlapings', overlapings, 'procesingTimes', procesingTimes);
     end
 end
 
 %% FUNCTION TO CALCULATE THE RESULTS OF A SEQUENCE DATASTORE
-function calculateValidationResults(classifications, recognitions, overlapings, procesingTimes)
+function [data, results] = calculateValidationResults(classifications, recognitions, overlapings, procesingTimes)
 % VERIFICAR QUE ESTA  ES UNA BUEBNA FORMA DE FLATTEN
-    classifications = classifications(:);
-    recognitions = recognitions(:);
-    overlapings = overlapings(:);
-    procesingTimes = procesingTimes(:);
+classifications = classifications(:);
+recognitions = recognitions(:);
+overlapings = overlapings(:);
+procesingTimes = procesingTimes(:);
     % Change NaN to 0 in the overlapping factor to prevent error
     overlapings(isnan(overlapings)) = 0;
     % Calculate accuracies
@@ -155,7 +202,14 @@ function calculateValidationResults(classifications, recognitions, overlapings, 
     fprintf('Classification accuracy: %f\n',accClasification);
     fprintf('Recognition accuracy: %f\n',accRecognition);
     fprintf('Avegage overlaping factor: %f\n',avgOverlapingFactor);
-    fprintf('Avegage procesing time: %f\n',avgProcesingTime);  
+    fprintf('Avegage procesing time: %f\n',avgProcesingTime);
+    
+data = struct('classifications', classifications, 'recognitions', ... 
+        recognitions, 'overlapings', overlapings, 'procesingTimes', procesingTimes);
+    
+    results = struct('clasification', accClasification, 'recognition', ... 
+        accRecognition, 'overlapingFactor', avgOverlapingFactor, 'procesingTime', avgProcesingTime);
+
 end
 
 %% FUNCTION TO SET WRONG LABELS TO NOGESTURE
@@ -185,7 +239,7 @@ function class = classifyPredictions(yPred)
     catCounts = countcats(yPred);
     [catCounts,indexes] = sort(catCounts,'descend');
     newCategories = categories(indexes);
-    if catCounts(1) >= SharedFunctions.MIN_LABELS_SEQUENCE
+    if catCounts(1) >= Shared.MIN_LABELS_SEQUENCE
        class = newCategories(1);
     else
        class = toCategoricalGesture({'noGesture'}); 
@@ -194,54 +248,81 @@ end
 
 %% FUNCTION TO EVALUATE SAMPLE FRAMES
 function [labels, timestamps, processingTimes] = evaluateSampleFrames(signal, model)
-    % Frame onfigurations
-    FrameWindow = SharedFunctions.FRAME_WINDOW;
-    windowsStep = SharedFunctions.WINDOW_STEP;
-    % Signal Data
+    % Calculate the number of windows
     numPoints = length(signal);
-    numChannels = size(signal, 2);
+    if isequal(Shared.FILLING_TYPE, 'before') || isequal(Shared.FILLING_TYPE, 'during')
+         numWindows = floor((numPoints - (Shared.FRAME_WINDOW / 2)) / Shared.WINDOW_STEP_RECOG) + 1;
+         stepLimit = numPoints - floor(Shared.FRAME_WINDOW / 2) + 1;
+    elseif isequal(Shared.FILLING_TYPE, 'none')
+        numWindows = floor((numPoints - (Shared.FRAME_WINDOW)) / Shared.WINDOW_STEP_RECOG) + 1;
+        stepLimit = numPoints - Shared.FRAME_WINDOW + 1;
+    end
+    
     % Preallocate space for the spectrograms
-    numWindows = floor((length(signal)-(FrameWindow/2)) /windowsStep) + 1;
     labels = cell(1, numWindows);
     timestamps = zeros(1,numWindows);
     processingTimes = zeros(1,numWindows);
-    % TODO: RELLENAR AL INICIO ANTES DE LA PRUEBA
-    % ACTUALMENTE: CON RELLENO EN LA VENTANA DESLIZANTE EN LOS ULTIMOS FRAMES AL FINAL
+    
+    % Fill before frame classification
+    if isequal(Shared.FILLING_TYPE, 'before')
+        filling = (2 * Shared.noGestureStd) * rand(Shared.FRAME_WINDOW / 2, Shared.numChannels) ... 
+            + (Shared.noGestureMean - Shared.noGestureStd);
+        signal = [signal; filling];
+    end
+    
     % Start the frame classification
     idx = 1; inicio = 1;
-    while inicio <= numPoints - floor(FrameWindow /2) +1
+    while inicio <= stepLimit
+        % Start timer
         timer = tic;
-        finish = inicio + FrameWindow -1;
-        timestamp = inicio + floor((FrameWindow - 1) / 2);
-        if finish <= numPoints
-            frameSignal = signal(inicio:finish, :);
-        else
-            frameSignal = zeros(FrameWindow, numChannels);
-            frameSignal(1:numPoints-inicio+1, :) = signal(inicio:numPoints, :);
+        
+        finish = inicio + Shared.FRAME_WINDOW - 1;
+        timestamp = inicio + floor((Shared.FRAME_WINDOW - 1) / 2);
+        
+        % Fill during frame classification
+        if finish > numPoints  && isequal(Shared.FILLING_TYPE, 'during')
             extraPoints = finish - numPoints +1;
-            % TODO: RELLENAR CON RANDOM DEL PROMEDIO DE NO GESTURE
-            fill = zeros(extraPoints, numChannels); 
-            frameSignal(numPoints-inicio+1:FrameWindow, :) =  fill;
+            fill = (2 * Shared.noGestureStd) * rand(extraPoints, Shared.numChannels) ... 
+                + (Shared.noGestureMean - Shared.noGestureStd);
+            frameSignal =  [signal(inicio:numPoints, :); fill];
+        else
+            frameSignal = signal(inicio:finish, :);
         end
-        frameSignal = SharedFunctions.preprocessSignal(frameSignal);
-        spectrograms = SharedFunctions.generateSpectrograms(frameSignal);
+        frameSignal = Shared.preprocessSignal(frameSignal);
+        spectrograms = Shared.generateSpectrograms(frameSignal);
         [predicction, predictedScores] = classify(model,spectrograms);
+        
         % Check if the prediction is over the frame classification threshold
-        if max(predictedScores) < SharedFunctions.FRAME_CLASS_THRESHOLD
+        if max(predictedScores) < Shared.FRAME_CLASS_THRESHOLD
             predicction = 'noGesture';
         else
             predicction = char(predicction);
         end
+        
+        % Stop timer
         processingTime = toc(timer);
+        
         % Save sample results
         labels{1, idx} =  predicction; % datum
         timestamps(1, idx) = timestamp; % label
         processingTimes(1, idx) = processingTime; % processing time
+        
         % Slide the window
         idx = idx + 1;
-        inicio = inicio + windowsStep;
+        inicio = inicio + Shared.WINDOW_STEP_RECOG;
     end
 end
+
+%% EXTRA
+%{
+    Using "FrameWindow/2" and adding  the other "FrameWindow/2" to the end means that there is not lose of data 
+    
+    Original formula for the number of windows:
+    num_win=floor((n-(frame_len))/frame_step)+1;
+    Link to number of windows formula:
+    https://stackoverflow.com/questions/53796545/number-of-overlapping-windows-of-a-given-length
+%}
+
 
 %% FOR TESTING
 %{

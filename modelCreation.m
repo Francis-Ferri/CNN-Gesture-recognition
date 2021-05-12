@@ -5,13 +5,15 @@
 %% SET DATASTORES PATHS
 dataDirTraining = fullfile('Datastores', 'training');
 dataDirValidation = fullfile('Datastores', 'validation');
+dataDirTesting = fullfile('Datastores', 'testing');
 
 %% THE DATASTORES RE CREATED
 % The classes are defined
 withNoGesture = true;
-classes = setNogestureUse(withNoGesture);
+classes = Shared.setNoGestureUse(withNoGesture);
 trainingDatastore = SpectrogramDatastore(dataDirTraining, withNoGesture);
 validationDatastore = SpectrogramDatastore(dataDirValidation, withNoGesture);
+testingDatastore = SpectrogramDatastore(dataDirTesting, withNoGesture);
 %dataSample = preview(trainingDatastore);
 clear dataDirTraining dataDirValidation
 
@@ -22,10 +24,9 @@ inputSize = trainingDatastore.DataDimensions;
 % The amount of data to be used in the creation is specified ]0:1]
 trainingDatastore = setDataAmount(trainingDatastore, 1);
 validationDatastore = setDataAmount(validationDatastore, 1);
+testingDatastore = setDataAmount(testingDatastore, 1);
 
 %% THE DATA IS DIVIDED IN TRAINING-VALIDATION-TESTING
-% The training-validation-tests data is obtained
-[validationDatastore, testingDatastore] = divideDatastore(validationDatastore, 0.5);
 % The total data for training-validation-tests is obtained
 numTrainingSamples = ['Training samples: ', num2str(trainingDatastore.NumObservations)];
 numValidationSamples = ['Validation samples: ', num2str(validationDatastore.NumObservations)];
@@ -66,10 +67,6 @@ clear maxEpochs miniBatchSize
 net = trainNetwork(trainingDatastore, lgraph, options);
 clear options lgraph
 
-%% ANALIZE CHARACTERISTIC EXTRACTOR USING T-SNE
-% Inputs: datastore, net, layer, numSamples, numPCAComponents, perplexity
-tsneAnalisis(trainingDatastore, net, 'depthcat_1', 50, 50, 20); % data % [data, acts]
-
 %% ACCURACY FOR EACH DATASET
 % Get training-validation-tests accuracies
 accTraining = calculateAccuracy(net, trainingDatastore);
@@ -94,22 +91,7 @@ if ~exist("models", 'dir')
 end
 save(['models/model_', datestr(now,'dd-mm-yyyy_HH-MM-ss')], 'net');
 
-%% FUCNTION TO SET THE USE OF NOGESTURE
-function classes = setNogestureUse(withNoGesture)
-    if withNoGesture
-        classes = ["fist", "noGesture", "open", "pinch", "waveIn", "waveOut"];
-    else
-        classes = ["fist", "open", "pinch", "waveIn", "waveOut"];
-    end
-end
-
-%% FUNCTION TO DIVIDE DATASTORE IN TWO HALVES
-function [firstDatstore, secondDatastore] = divideDatastore(dataStore, percentage)
-    % First datstore(percentage%) && second datastore(1 - percentage%)
-    [firstDatstore, secondDatastore] =  partition(dataStore, percentage);
-end
-
-%% FUNCTION TO STABLISH THE NEURL NETWORK ARCHITECTURE
+%% FUNCTION TO STABLISH THE NEURAL NETWORK ARCHITECTURE
 function lgraph = setNeuralNetworkArchitecture(inputSize, numClasses)
     % Create layer graph
     lgraph = layerGraph();
@@ -160,6 +142,50 @@ function lgraph = setNeuralNetworkArchitecture(inputSize, numClasses)
     lgraph = connectLayers(lgraph,"Inception_1a-3x3_relu","depthcat_1/in2");
     lgraph = connectLayers(lgraph,"Inception_1a-5x5_relu","depthcat_1/in3");
 end
+
+%% FUNCTION TO CALCULATE ACCURACY OF A DATASTORE
+function accuracy = calculateAccuracy(net, datastore)
+    YPred = classify(net,datastore);
+    YValidation = datastore.Labels;
+    % Calculate accuracy
+    accuracy = sum(YPred == YValidation)/numel(YValidation);
+end
+
+%% FUNCTION TO CALCULATE AD PLOT A CONFUSION MATRIX
+function calculateConfusionMatrix(net, datastore, datasetName, withNoGesture)
+    % Get predictions of each frame
+    predLabels = classify(net, datastore);
+    realLabels = datastore.Labels;
+    % Stablish clases
+    classes = categorical(Shared.setNoGestureUse(withNoGesture));
+    % Create the confusion matrix
+    confusionMatrix = confusionmat(realLabels, predLabels, 'Order', classes);
+    figure('Name', ['Confusion Matrix - ' datasetName])
+        matrixChart = confusionchart(confusionMatrix, classes);
+        % Chart options
+        matrixChart.ColumnSummary = 'column-normalized';
+        matrixChart.RowSummary = 'row-normalized';
+        matrixChart.Title = ['Hand gestures - ' datasetName];
+        sortClasses(matrixChart,classes);
+end
+
+%% EXTRA THINGS
+%{
+
+    %% DIVIDE DATASTORE
+
+%% FUNCTION TO DIVIDE DATASTORE IN TWO HALVES
+function [firstDatstore, secondDatastore] = divideDatastore(dataStore, percentage)
+    % First datstore(percentage%) && second datastore(1 - percentage%)
+    [firstDatstore, secondDatastore] =  partition(dataStore, percentage);
+end
+
+
+    %% TSNE
+
+%% ANALIZE CHARACTERISTIC EXTRACTOR USING T-SNE
+% Inputs: datastore, net, layer, numSamples, numPCAComponents, perplexity
+tsneAnalisis(trainingDatastore, net, 'depthcat_1', 50, 50, 20); % data % [data, acts]
 
 %% FUNCTION TO PLOT T-SNE IN 2D
 function tsne2D(acts, cats, numPCAComponents, perplexity)
@@ -224,28 +250,6 @@ function [data, acts] = tsneAnalisis(datastore, net, layer, numSamples, numPCACo
     reset(datastore);
 end
 
-%% FUNCTION TO CALCULATE ACCURACY OF A DATASTORE
-function accuracy = calculateAccuracy(net, datastore)
-    YPred = classify(net,datastore);
-    YValidation = datastore.Labels;
-    % Calculate accuracy
-    accuracy = sum(YPred == YValidation)/numel(YValidation);
-end
 
-%% FUNCTION TO CALCULATE AD PLOT A CONFUSION MATRIX
-function calculateConfusionMatrix(net, datastore, datasetName, withNoGesture)
-    % Get predictions of each frame
-    predLabels = classify(net, datastore);
-    realLabels = datastore.Labels;
-    % Stablish clases
-    classes = categorical(setNogestureUse(withNoGesture));
-    % Create the confusion matrix
-    confusionMatrix = confusionmat(realLabels, predLabels, 'Order', classes);
-    figure('Name', ['Confusion Matrix - ' datasetName])
-        matrixChart = confusionchart(confusionMatrix, classes);
-        % Chart options
-        matrixChart.ColumnSummary = 'column-normalized';
-        matrixChart.RowSummary = 'row-normalized';
-        matrixChart.Title = ['Hand gestures - ' datasetName];
-        sortClasses(matrixChart,classes);
-end
+%}
+
