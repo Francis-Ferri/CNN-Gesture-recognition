@@ -41,28 +41,22 @@ for i = 1:length(usersTrainVal) % % parfor
     transformedSamplesTraining = transformSamples(trainingSamples);
     userResults = evaluateSamples(transformedSamplesTraining, model);
     % Set user's training results
-    classifications(i, :) = userResults.classifications;
-    recognitions(i, :) = userResults.recognitions;
-    overlapings(i, :) = userResults.overlapings;
-    procesingTimes(i, :) = userResults.procesingTimes;
+    [classifications(i, :), recognitions(i, :), overlapings(i, :), procesingTimes(i, :)] = deal( ... 
+        userResults.classifications, userResults.recognitions, userResults.overlapings, userResults.procesingTimes);
     % Validation data
     transformedSamplesValidation = transformSamples(validationSamples);
     userResults = evaluateSamples(transformedSamplesValidation, model);
     % Set user's training results
-    classificationsVal(i, :) = userResults.classifications;
-    recognitionsVal(i, :) = userResults.recognitions;
-    overlapingsVal(i, :) = userResults.overlapings;
-    procesingTimesVal(i, :) = userResults.procesingTimes;
+    [classificationsVal(i, :), recognitionsVal(i, :), overlapingsVal(i, :), procesingTimesVal(i, :)] = deal( ... 
+        userResults.classifications, userResults.recognitions, userResults.overlapings, userResults.procesingTimes);
 end
-disp('Training data results');
+fprintf('\nTraining data results\n');
 [dataTrain, resultsTrain] = calculateValidationResults(classifications, recognitions, ... 
-    overlapings, procesingTimes);
-disp('Validacion data results');
+    overlapings, procesingTimes, length(usersTrainVal));
+disp('\nValidacion data results\n');
 [dataValidation, resultsValidation] = calculateValidationResults(classificationsVal, ... 
-    recognitionsVal, overlapingsVal, procesingTimesVal);
-clear i trainingSamples validationSamples transformedSamplesValidation
-clear classifications recognitions overlapings procesingTimes
-clear classificationsVal recognitionsVal overlapingsVal procesingTimesVal
+    recognitionsVal, overlapingsVal, procesingTimesVal, length(usersTrainVal));
+clear i trainingSamples validationSamples transformedSamplesValidation classifications recognitions overlapings procesingTimes classificationsVal recognitionsVal overlapingsVal procesingTimesVal
 
 %% PREALLOCATE SPACE FOR RESULTS TESTING
 % Testing - users training samples
@@ -80,30 +74,21 @@ for i = 1:length(usersTest)
     transformedSamplesTraining = transformSamples(trainingSamples);
     userResults = evaluateSamples(transformedSamplesTraining, model);
     % Set user's training results
-    classificationsTest1(i, :) = userResults.classifications;
-    recognitionsTest1(i, :) = userResults.recognitions;
-    overlapingsTest1(i, :) = userResults.overlapings;
-    procesingTimesTest1(i, :) = userResults.procesingTimes;
+    classificationsTest1(i, :) = userResults.classifications; recognitionsTest1(i, :) = userResults.recognitions; overlapingsTest1(i, :) = userResults.overlapings; procesingTimesTest1(i, :) = userResults.procesingTimes;
     % Validation data
     transformedSamplesValidation = transformSamples(validationSamples);
     userResults = evaluateSamples(transformedSamplesValidation, model);
     % Set user's training results
-    classificationsTest2(i, :) = userResults.classifications;
-    recognitionsTest2(i, :) = userResults.recognitions;
-    overlapingsTest2(i, :) = userResults.overlapings;
-    procesingTimesTest2(i, :) = userResults.procesingTimes;
+    classificationsTest2(i, :) = userResults.classifications; recognitionsTest2(i, :) = userResults.recognitions; overlapingsTest2(i, :) = userResults.overlapings; procesingTimesTest2(i, :) = userResults.procesingTimes;
 end
 classificationsTest = [classificationsTest1; classificationsTest2];
 recognitionsTest = [recognitionsTest1; recognitionsTest2];
 overlapingsTest = [overlapingsTest1; overlapingsTest2];
 procesingTimesTest = [procesingTimesTest1; procesingTimesTest2];
-disp('Testing data results');
+fprintf('\nTesting data results\n');
 [dataTest, resultsTest] = calculateValidationResults(classificationsTest, ... 
-    recognitionsTest, overlapingsTest, procesingTimesTest);
-clear i trainingSamples validationSamples transformedSamplesValidation
-clear classificationsTest1 recognitionsTest1 overlapingsTest1 procesingTimesTest1
-clear classificationsTest2 recognitionsTest2 overlapingsTest2 procesingTimesTest2
-clear classificationsTest recognitionsTest overlapingsTest procesingTimesTest
+    recognitionsTest, overlapingsTest, procesingTimesTest, length(usersTest));
+clear i trainingSamples validationSamples transformedSamplesValidation classificationsTest1 recognitionsTest1 overlapingsTest1 procesingTimesTest1 classificationsTest2 recognitionsTest2 overlapingsTest2 procesingTimesTest2n classificationsTest recognitionsTest overlapingsTest procesingTimesTest
 
 %% FUCTION TO PREALLOCATE SPACE FOR VALIDATION LIBRARY RESULT
 function [clasifications, recognitions, overlapings, procesingTimes] = preallocateResults(numUsers)
@@ -165,7 +150,7 @@ function userResults = evaluateSamples(samples, model)
         % Classify prediction
         class = classifyPredictions(labels);
         % Postprocess the sample
-        labels = setWrongLabelsToNoGestute(labels, char(class));
+        labels = postprocessSample(labels, char(class));
         % Prepare response
         response = struct('vectorOfLabels', labels, 'vectorOfTimePoints', timestamps, ... 
             'vectorOfProcessingTimes', processingTimes, 'class', class);
@@ -184,36 +169,127 @@ function userResults = evaluateSamples(samples, model)
     end
 end
 
-%% FUNCTION TO CALCULATE THE RESULTS OF A SEQUENCE DATASTORE
-function [data, results] = calculateValidationResults(classifications, recognitions, overlapings, procesingTimes)
-% VERIFICAR QUE ESTA  ES UNA BUEBNA FORMA DE FLATTEN
-classifications = classifications(:);
-recognitions = recognitions(:);
-overlapings = overlapings(:);
-procesingTimes = procesingTimes(:);
+%% FUNCTION TO CALCULATE THE RESULTS OF A DATASTORE (MEAN USERS)
+function [classificationPerUser, recognitionPerUser, overlapingPerUser, processingTimePerUser] = ... 
+            calculateMeanUsers(classifications, recognitions, overlapings, procesingTimes, numUsers)
+
+    [classificationPerUser, recognitionPerUser, overlapingPerUser, processingTimePerUser] = ... 
+        deal(zeros(numUsers, 1), zeros(numUsers, 1), zeros(numUsers, 1), zeros(numUsers, 1));
+    
+    for i = 1:numUsers
+        classificationPerUser(i, 1) = sum(classifications(i, :) == 1) / length(classifications(i, :));
+        recognitionPerUser(i , 1) = sum(recognitions(i, :) == 1) / ... 
+            sum(recognitions(i, :) == 1 | recognitions(i, :) == 0); %noGesture has (-1)
+        overlapingsUser = overlapings(i, :);
+        overlapingPerUser(i, 1) = mean(overlapingsUser(overlapingsUser ~= -1));
+        processingTimePerUser(i, 1) = mean(procesingTimes(i, :));
+    end
+end
+
+%% FUNCTION TO CALCULATE THE RESULTS OF A DATASTORE (GLOBAL)
+function [globalResps, globalStds] = calculateResultsGlobalMean(all, perUser, numUsers)
+    % Calculate accuracies
+    accClasification = sum(all.classifications==1) / length(all.classifications);
+    accRecognition = sum(all.recognitions==1) / sum(all.recognitions==1 | all.recognitions==0); %noGesture has (-1)
+    avgOverlapingFactor = mean(all.overlapings(all.overlapings ~= -1));
+    avgProcesingTime = mean(all.procesingTimes);
+    % Set results
+    globalResps = struct('accClasification', accClasification, 'accRecognition', accRecognition, ... 
+        'avgOverlapingFactor', avgOverlapingFactor, 'avgProcesingTime', avgProcesingTime);
+    % Calculate standard deviations regarding users means
+    [classificationPerUser, recognitionPerUser, overlapingPerUser, processingTimePerUser] = deal( ... 
+        perUser.classifications, perUser.recognitions, perUser.overlapings, perUser.procesingTimes);
+    [stdClassification, stdRecognition, stdOverlaping, stdProcessingTime] = deal(0,0,0,0);
+    for i = 1:numUsers
+        stdClassification = stdClassification + (classificationPerUser(i,1) - accClasification)^2;
+        stdRecognition = stdRecognition + (recognitionPerUser(i, 1) - accRecognition)^2;
+        stdOverlaping = stdOverlaping + (overlapingPerUser(i, 1) - avgOverlapingFactor)^2;
+        stdProcessingTime = stdProcessingTime + (processingTimePerUser - avgProcesingTime)^2;
+    end
+    if numUsers > 1
+         [stdClassification, stdRecognition, stdOverlaping, stdProcessingTime] = deal( ... 
+             stdClassification / (numUsers - 1), stdRecognition / (numUsers - 1), ... 
+             stdOverlaping / (numUsers - 1), stdProcessingTime / (numUsers - 1));
+    else 
+        [stdClassification, stdRecognition, stdOverlaping, stdProcessingTime] = deal(0,0,0,0);
+    end
+    % Set standard deviations
+    globalStds = struct('stdClassification', stdClassification, 'stdRecognition', stdRecognition, ... 
+        'stdOverlaping', stdOverlaping, 'stdProcessingTime', stdProcessingTime);
+end
+
+%% FUNCTION TO CALCULATE THE RESULTS OF A DATASTORE
+function [data, results] = calculateValidationResults(classifications, recognitions, overlapings, procesingTimes, numUsers)
     % Change NaN to 0 in the overlapping factor to prevent error
     overlapings(isnan(overlapings)) = 0;
-    % Calculate accuracies
-    accClasification = sum(classifications==1) / length(classifications);
-    accRecognition = sum(recognitions==1) / sum(recognitions==1 | recognitions==0); %noGesture has (-1)
-    avgOverlapingFactor = mean(overlapings(overlapings ~= -1)); %& ~isnan(overlapings)
-    avgProcesingTime = mean(procesingTimes);
-    % Display the results
-    fprintf('Classification accuracy: %f\n',accClasification);
-    fprintf('Recognition accuracy: %f\n',accRecognition);
-    fprintf('Avegage overlaping factor: %f\n',avgOverlapingFactor);
-    fprintf('Avegage procesing time: %f\n',avgProcesingTime);
+    % Calculate results using the mean values of users results
+    [classificationPerUser, recognitionPerUser, overlapingPerUser, processingTimePerUser] = ... 
+    calculateMeanUsers(classifications, recognitions, overlapings, procesingTimes, numUsers);
+    % Print results using mean values
+    disp('Results (mean of user results)');
+    fprintf('Classification | acc: %f | std: %f  \n', mean(classificationPerUser), std(classificationPerUser));
+    fprintf('Recognition | acc: %f | std: %f  \n', mean(recognitionPerUser), std(recognitionPerUser));
+    fprintf('Overlaping | avg: %f | std: %f  \n', mean(overlapingPerUser), std(overlapingPerUser));
+    fprintf('Processing time | avg: %f | std: %f  \n', mean(processingTimePerUser), std(processingTimePerUser));
+    % Flatten samples
+    [classifications, recognitions, overlapings, procesingTimes] = ... 
+    deal(classifications(:), recognitions(:), overlapings(:), procesingTimes(:));
+    % Calculate results using a global mean
+    all = struct('classifications', classifications, 'recognitions', recognitions, ... 
+        'overlapings', overlapings, 'procesingTimes', procesingTimes);
+    perUser =  struct('classifications', classificationPerUser, 'recognitions', recognitionPerUser, ... 
+        'overlapings', overlapingPerUser, 'procesingTimes', processingTimePerUser);
+    [globalResps, globalStds] = calculateResultsGlobalMean(all, perUser, numUsers);
+    % Print results using global values
+    disp('Results (Global results)');
+    fprintf('Classification | acc: %f | std: %f  \n', globalResps.accClasification, globalStds.stdClassification);
+    fprintf('Recognition | acc: %f | std: %f  \n', globalResps.accRecognition, globalStds.stdRecognition);
+    fprintf('Overlaping | avg: %f | std: %f  \n', globalResps.avgOverlapingFactor, globalStds.stdOverlaping);
+    fprintf('Processing time | avg: %f | std: %f  \n', globalResps.avgProcesingTime, globalStds.stdProcessingTime);
+    % Set results
+    results = struct('clasification',  globalResps.accClasification, 'recognition', ... 
+        globalResps.accRecognition, 'overlapingFactor', globalResps.avgOverlapingFactor, ... 
+        'procesingTime', globalResps.avgProcesingTime);
     
 data = struct('classifications', classifications, 'recognitions', ... 
         recognitions, 'overlapings', overlapings, 'procesingTimes', procesingTimes);
-    
-    results = struct('clasification', accClasification, 'recognition', ... 
-        accRecognition, 'overlapingFactor', avgOverlapingFactor, 'procesingTime', avgProcesingTime);
 
 end
 
 %% FUNCTION TO SET WRONG LABELS TO NOGESTURE
-function labels = setWrongLabelsToNoGestute(labels, class)
+function labels = postprocessSample(labels, class)
+    if isequal(Shared.POSTPROCESS, '1-1')
+        % Change if (1) rigth and (1) left are the gesture
+        for i = 2:length(labels)-1
+            left = isequal(labels{1,i-1}, class);
+            right = isequal(labels{1,i+1}, class);
+            current = ~isequal(labels{1,i}, class);
+            if left && right && current
+                labels{1,i} = class;
+            end
+        end
+    elseif isequal(Shared.POSTPROCESS, '2-1')
+        % Change if (2) rigth and (1) left are the gesture
+        for i = 3:length(labels)-1
+            left = isequal(labels{1,i-1}, class) && isequal(labels{1,i-2}, class);
+            right = isequal(labels{1,i+1}, class);
+            current = ~isequal(labels{1,i}, class);
+            if left && right && current
+                labels{1,i} = class;
+            end
+        end
+    elseif isequal(Shared.POSTPROCESS, '1-2')
+         % Change if (1) rigth and (2) left are the gesture
+        for i = 2:length(labels)-2
+            left = isequal(labels{1,i-1}, class);
+            right = isequal(labels{1,i+1}, class)  && isequal(labels{1,i+2}, class);
+            current = ~isequal(labels{1,i}, class);
+            if left && right && current
+                labels{1,i} = class;
+            end
+        end
+    end
+    % Set wrong labels to noGestute
     for i = 1:length(labels)
         if ~isequal(labels{1,i}, class)
             labels{1,i} = 'noGesture';

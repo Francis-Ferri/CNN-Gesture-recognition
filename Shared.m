@@ -17,6 +17,7 @@ classdef Shared
         FRAME_CLASS_THRESHOLD = 0.5;
         MIN_LABELS_SEQUENCE = 4;
         FILLING_TYPE = 'before'
+        POSTPROCESS = '1-1';
         
         % Samples and signals
         numSamplesUser = 150;
