@@ -1,352 +1,493 @@
 %{
-    MODEL CREATION
+
 %}
 
-%%
-dataDirTraining = fullfile('Datastores', 'trainingDatastore');
-dataDirValidation = fullfile('Datastores', 'validationDatastore');
+%% SET DATASTORES PATHS
+dataDirTraining = fullfile('Datastores', 'training');
+dataDirValidation = fullfile('Datastores', 'validation');
+dataDirTesting = fullfile('Datastores', 'testing');
 
 %% THE DATASTORES RE CREATED
 % The classes are defined
-classes = ["fist","noGesture","open","pinch","waveIn","waveOut"];
-trainingDatastore = SpectrogramDatastore(dataDirTraining);
-validationDatastore = SpectrogramDatastore(dataDirValidation);
-%dataSample = preview(training_datastore);
+withNoGesture = true;
+classes = Shared.setNoGestureUse(withNoGesture);
+
+% The datastores are created
+trainingDatastore = SpectrogramDatastore(dataDirTraining, withNoGesture);
+validationDatastore = SpectrogramDatastore(dataDirValidation, withNoGesture);
+testingDatastore = SpectrogramDatastore(dataDirTesting, withNoGesture);
+%dataSample = preview(trainingDatastore);
+% Clean up variables
 clear dataDirTraining dataDirValidation
 
 %% THE INPUT DIMENSIONS ARE DEFINED
-inputSize = trainingDatastore.SequenceDimension;
+inputSize = trainingDatastore.DataDimensions;
 
 %% DEFINE THE AMOUNT OF DATA
 % The amount of data to be used in the creation is specified ]0:1]
 trainingDatastore = setDataAmount(trainingDatastore, 1);
 validationDatastore = setDataAmount(validationDatastore, 1);
+testingDatastore = setDataAmount(testingDatastore, 1);
 
 %% THE DATA IS DIVIDED IN TRAINING-VALIDATION-TESTING
-% The training-validation-tests data is obtained
-[validationDatastore, testingDatastore] = divideDatastore(validationDatastore);
 % The total data for training-validation-tests is obtained
 numTrainingSamples = ['Training samples: ', num2str(trainingDatastore.NumObservations)];
 numValidationSamples = ['Validation samples: ', num2str(validationDatastore.NumObservations)];
 numTestingSamples = ['Testing samples: ', num2str(testingDatastore.NumObservations)];
 % The amount of training-validation-tests data is printed
 fprintf('\n%s\n%s\n%s\n', numTrainingSamples, numValidationSamples, numTestingSamples);
+% Clean up variables
 clear numTrainingSamples numValidationSamples numTestingSamples
 
 %% THE NEURAL NETWORK ARCHITECTURE IS DEFINED
-numHiddenUnits = 200;
-filterSize = 2;
-numFilters = 20;
-numClasses = length(classes);
-layers = [ ...
-    sequenceInputLayer(inputSize,'Name','input')
-    
-    sequenceFoldingLayer('Name','fold')
-    
-    convolution2dLayer(filterSize,numFilters,'Name','conv') 
-    batchNormalizationLayer('Name','bn')
-    reluLayer('Name','relu')
-    maxPooling2dLayer([2 2],"Name","maxpool")
-    
-    dropoutLayer(0.2,"Name","drop")
-    
-    convolution2dLayer(filterSize,2*numFilters,'Name','conv_1') 
-    batchNormalizationLayer('Name','bn_1')
-    reluLayer('Name','relu_1')
-    
-    sequenceUnfoldingLayer('Name','unfold')
-    flattenLayer('Name','flatten')
-    
-    lstmLayer(numHiddenUnits,'OutputMode','sequence','Name','lstm')
-    
-    fullyConnectedLayer(numClasses, 'Name','fc')
-    softmaxLayer('Name','softmax')
-    classificationLayer('Name','classification')];
-clear inputSize numHiddenUnits filterSize numFilters numClasses
-
-%% LINK FOLD AND UNFOLD LAYERS
-lgraph = layerGraph(layers);
-lgraph = connectLayers(lgraph,'fold/miniBatchSize','unfold/miniBatchSize');
-clear layers
+numClasses = trainingDatastore.NumClasses;
+lgraph = setNeuralNetworkArchitecture(inputSize, numClasses);
+analyzeNetwork(lgraph);
+% Clean up variables
+clear numClasses
 
 %% THE OPTIONS ARE DIFINED
-maxEpochs = 1;
-miniBatchSize = 8;
+%gpuDevice(1);
+maxEpochs = 1;%10
+miniBatchSize = 32;%1024
 options = trainingOptions('adam', ...
     'InitialLearnRate', 0.001, ...
     'LearnRateSchedule','piecewise', ...
     'LearnRateDropFactor',0.2, ...
-    'LearnRateDropPeriod',5, ...
-    'ExecutionEnvironment','cpu', ...
+    'LearnRateDropPeriod',3, ... %8
+    'ExecutionEnvironment','cpu', ... %gpu
     'GradientThreshold',1, ...
     'MaxEpochs',maxEpochs, ...
     'MiniBatchSize',miniBatchSize, ...
     'Shuffle','never', ...
     'Verbose',0, ...
     'ValidationData', validationDatastore, ...
-    'ValidationFrequency',50, ...
+    'ValidationFrequency',floor(trainingDatastore.NumObservations/ miniBatchSize), ...
     'ValidationPatience',5, ...
     'Plots','training-progress');
+% Clean up variables
 clear maxEpochs miniBatchSize
 
 %% NETWORK TRAINING
 net = trainNetwork(trainingDatastore, lgraph, options);
-clear options 
+% Clean up variables
+clear options lgraph
 
-%% CALCULATE ACCURACIES
-fprintf('\nRESULTS\n');
-disp('Training results');
-evaluateDataStore(net, validationDatastore);
-disp('Validation results');
-evaluateDataStore(net, validationDatastore);
-disp('Testing results');
-evaluateDataStore(net, testingDatastore);
+%% ACCURACY FOR EACH DATASET
+% The accuracy for training-validation-tests is obtained
+accTraining = calculateAccuracy(net, trainingDatastore);
+accValidation = calculateAccuracy(net, validationDatastore);
+accTesting = calculateAccuracy(net, testingDatastore);
 
-%% PLOT PREDICCTION/REAL SAMPLE FROM DATASET
-plotPredictionDatastore(net, testingDatastore, 2);
+
+% The amount of training-validation-tests data is printed
+strAccTraining = ['Training accuracy: ', num2str(accTraining)];
+strAccValidation = ['Validation accuracy: ', num2str(accValidation)];
+strAccTesting = ['Testing accuracy: ', num2str(accTesting)];
+fprintf('\n%s\n%s\n%s\n', strAccTraining, strAccValidation, strAccTesting);
+
+% Clean up variables
+clear accTraining accValidation accTesting strAccTraining strAccValidation strAccTesting
+
+%% CONFUSION MATRIX FOR EACH DATASET
+calculateConfusionMatrix(net, trainingDatastore, 'training', withNoGesture);
+calculateConfusionMatrix(net, validationDatastore, 'validation', withNoGesture);
+calculateConfusionMatrix(net, testingDatastore, 'testing', withNoGesture);
+
+%% SAVE MODEL
+if ~exist("models", 'dir')
+   mkdir("models");
+end
+save(['models/model_', datestr(now,'dd-mm-yyyy_HH-MM-ss')], 'net');
+
+%% FUNCTION TO STABLISH THE NEURAL NETWORK ARCHITECTURE
+function lgraph = setNeuralNetworkArchitecture(inputSize, numClasses)
+    % Create layer graph
+    lgraph = layerGraph();
+    
+    % Add layer branches
+    tempLayers = imageInputLayer(inputSize,"Name","data");
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = convolution2dLayer([1 1],18,"Name","Inception_1a-1x1");
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        convolution2dLayer([1 1],16,"Name","Inception_1a-3x3_reduce")
+        reluLayer("Name","Inception_1a-3x3_relu_reduce")
+        convolution2dLayer([3 3],18,"Name","Inception_1a-3x3","Padding",[1 1 1 1])];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        maxPooling2dLayer([3 3],"Name","Inception_1a-pool","Padding",[1 1 1 1])
+        convolution2dLayer([1 1],18,"Name","Inception_1a-pool_proj")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        convolution2dLayer([1 1],16,"Name","Inception_1a-5x5_reduce")
+        reluLayer("Name","Inception_1a-5x5_relu_reduce_2")
+        convolution2dLayer([5 5],18,"Name","Inception_1a-5x5","Padding",[2 2 2 2])];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        depthConcatenationLayer(4,"Name","depthcat_1a")
+        reluLayer("Name","Inception_1a_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = convolution2dLayer([1 1],18,"Name","Inception_1b-1x1");
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        convolution2dLayer([1 1],16,"Name","Inception_1b-3x3_reduce")
+        reluLayer("Name","Inception_1b-3x3_relu_reduce")
+        convolution2dLayer([3 3],18,"Name","Inception_1b-3x3","Padding",[1 1 1 1])];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        convolution2dLayer([1 1],16,"Name","Inception_1b-5x5_reduce")
+        reluLayer("Name","Inception_1b-5x5_relu_reduce_2")
+        convolution2dLayer([5 5],18,"Name","Inception_1b-5x5","Padding",[2 2 2 2])];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        maxPooling2dLayer([3 3],"Name","Inception_1b-pool","Padding",[1 1 1 1])
+        convolution2dLayer([1 1],18,"Name","Inception_1b-pool_proj")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        depthConcatenationLayer(4,"Name","depthcat_1b")
+        reluLayer("Name","Inception_1b")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = convolution2dLayer([1 1],18,"Name","Inception_1c-1x1");
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        convolution2dLayer([1 1],16,"Name","Inception_1c-3x3_reduce")
+        reluLayer("Name","Inception_1c-3x3_relu_reduce")
+        convolution2dLayer([3 3],18,"Name","Inception_1c-3x3","Padding",[1 1 1 1])];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        maxPooling2dLayer([3 3],"Name","Inception_1c-pool","Padding",[1 1 1 1])
+        convolution2dLayer([1 1],18,"Name","Inception_1c-pool_proj")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        convolution2dLayer([1 1],16,"Name","Inception_1c-5x5_reduce")
+        reluLayer("Name","Inception_1c-5x5_relu_reduce_2")
+        convolution2dLayer([5 5],18,"Name","Inception_1c-5x5","Padding",[2 2 2 2])];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = depthConcatenationLayer(4,"Name","depthcat_1c");
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        additionLayer(2,"Name","addition_1ac")
+        reluLayer("Name","Inception_1c")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        convolution2dLayer([1 1],16,"Name","Inception_1d-5x5_reduce")
+        reluLayer("Name","Inception_1d-5x5_relu_reduce_2")
+        convolution2dLayer([5 5],18,"Name","Inception_1d-5x5","Padding",[2 2 2 2])];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        maxPooling2dLayer([3 3],"Name","Inception_1d-pool","Padding",[1 1 1 1])
+        convolution2dLayer([1 1],18,"Name","Inception_1d-pool_proj")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = convolution2dLayer([1 1],18,"Name","Inception_1d-1x1");
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        convolution2dLayer([1 1],16,"Name","Inception_1d-3x3_reduce")
+        reluLayer("Name","Inception_1d-3x3_relu_reduce")
+        convolution2dLayer([3 3],18,"Name","Inception_1d-3x3","Padding",[1 1 1 1])];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        depthConcatenationLayer(4,"Name","depthcat_1d")
+        reluLayer("Name","Inception_1d")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        convolution2dLayer([1 1],16,"Name","Inception_1e-3x3_reduce")
+        reluLayer("Name","Inception_1e-3x3_relu_reduce")
+        convolution2dLayer([3 3],18,"Name","Inception_1e-3x3","Padding",[1 1 1 1])];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = convolution2dLayer([1 1],18,"Name","Inception_1e-1x1");
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        maxPooling2dLayer([3 3],"Name","Inception_1e-pool","Padding",[1 1 1 1])
+        convolution2dLayer([1 1],18,"Name","Inception_1e-pool_proj")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        convolution2dLayer([1 1],16,"Name","Inception_1e-5x5_reduce")
+        reluLayer("Name","Inception_1e-5x5_relu_reduce_2")
+        convolution2dLayer([5 5],18,"Name","Inception_1e-5x5","Padding",[2 2 2 2])];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = depthConcatenationLayer(4,"Name","depthcat_1e");
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        additionLayer(2,"Name","addition_1ce")
+        reluLayer("Name","Inception_1e")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        convolution2dLayer([1 1],16,"Name","Inception_1f-5x5_reduce")
+        reluLayer("Name","Inception_1f-5x5_relu_reduce_2")
+        convolution2dLayer([5 5],18,"Name","Inception_1f-5x5","Padding",[2 2 2 2])
+        reluLayer("Name","Inception_1f-5x5_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        convolution2dLayer([1 1],16,"Name","Inception_1f-3x3_reduce")
+        reluLayer("Name","Inception_1f-3x3_relu_reduce")
+        convolution2dLayer([3 3],18,"Name","Inception_1f-3x3","Padding",[1 1 1 1])
+        reluLayer("Name","Inception_1f-3x3_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        maxPooling2dLayer([3 3],"Name","Inception_1f-pool","Padding",[1 1 1 1])
+        convolution2dLayer([1 1],18,"Name","Inception_1f-pool_proj")
+        reluLayer("Name","Inception_1f-relu-pool_proj")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        convolution2dLayer([1 1],18,"Name","Inception_1f-1x1")
+        reluLayer("Name","Inception_1f-1x1_relu")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    tempLayers = [
+        depthConcatenationLayer(4,"Name","depthcat_1f")
+        crossChannelNormalizationLayer(5,"Name","crossnorm_1")
+        fullyConnectedLayer(numClasses,"Name","fc_1")
+        softmaxLayer("Name","softmax")
+        classificationLayer("Name","classoutput")];
+    lgraph = addLayers(lgraph,tempLayers);
+
+    % clean up helper variable
+    lgraph = connectLayers(lgraph,"data","Inception_1a-1x1");
+    lgraph = connectLayers(lgraph,"data","Inception_1a-3x3_reduce");
+    lgraph = connectLayers(lgraph,"data","Inception_1a-pool");
+    lgraph = connectLayers(lgraph,"data","Inception_1a-5x5_reduce");
+    lgraph = connectLayers(lgraph,"Inception_1a-1x1","depthcat_1a/in4");
+    lgraph = connectLayers(lgraph,"Inception_1a-3x3","depthcat_1a/in1");
+    lgraph = connectLayers(lgraph,"Inception_1a-pool_proj","depthcat_1a/in3");
+    lgraph = connectLayers(lgraph,"Inception_1a-5x5","depthcat_1a/in2");
+    lgraph = connectLayers(lgraph,"Inception_1a_relu","Inception_1b-1x1");
+    lgraph = connectLayers(lgraph,"Inception_1a_relu","Inception_1b-3x3_reduce");
+    lgraph = connectLayers(lgraph,"Inception_1a_relu","Inception_1b-5x5_reduce");
+    lgraph = connectLayers(lgraph,"Inception_1a_relu","Inception_1b-pool");
+    lgraph = connectLayers(lgraph,"Inception_1a_relu","addition_1ac/in1");
+    lgraph = connectLayers(lgraph,"Inception_1b-1x1","depthcat_1b/in2");
+    lgraph = connectLayers(lgraph,"Inception_1b-5x5","depthcat_1b/in1");
+    lgraph = connectLayers(lgraph,"Inception_1b-pool_proj","depthcat_1b/in4");
+    lgraph = connectLayers(lgraph,"Inception_1b-3x3","depthcat_1b/in3");
+    lgraph = connectLayers(lgraph,"Inception_1b","Inception_1c-1x1");
+    lgraph = connectLayers(lgraph,"Inception_1b","Inception_1c-3x3_reduce");
+    lgraph = connectLayers(lgraph,"Inception_1b","Inception_1c-pool");
+    lgraph = connectLayers(lgraph,"Inception_1b","Inception_1c-5x5_reduce");
+    lgraph = connectLayers(lgraph,"Inception_1c-1x1","depthcat_1c/in1");
+    lgraph = connectLayers(lgraph,"Inception_1c-3x3","depthcat_1c/in2");
+    lgraph = connectLayers(lgraph,"Inception_1c-pool_proj","depthcat_1c/in4");
+    lgraph = connectLayers(lgraph,"Inception_1c-5x5","depthcat_1c/in3");
+    lgraph = connectLayers(lgraph,"depthcat_1c","addition_1ac/in2");
+    lgraph = connectLayers(lgraph,"Inception_1c","Inception_1d-5x5_reduce");
+    lgraph = connectLayers(lgraph,"Inception_1c","Inception_1d-pool");
+    lgraph = connectLayers(lgraph,"Inception_1c","Inception_1d-1x1");
+    lgraph = connectLayers(lgraph,"Inception_1c","Inception_1d-3x3_reduce");
+    lgraph = connectLayers(lgraph,"Inception_1c","addition_1ce/in2");
+    lgraph = connectLayers(lgraph,"Inception_1d-pool_proj","depthcat_1d/in4");
+    lgraph = connectLayers(lgraph,"Inception_1d-1x1","depthcat_1d/in1");
+    lgraph = connectLayers(lgraph,"Inception_1d-5x5","depthcat_1d/in3");
+    lgraph = connectLayers(lgraph,"Inception_1d-3x3","depthcat_1d/in2");
+    lgraph = connectLayers(lgraph,"Inception_1d","Inception_1e-3x3_reduce");
+    lgraph = connectLayers(lgraph,"Inception_1d","Inception_1e-1x1");
+    lgraph = connectLayers(lgraph,"Inception_1d","Inception_1e-pool");
+    lgraph = connectLayers(lgraph,"Inception_1d","Inception_1e-5x5_reduce");
+    lgraph = connectLayers(lgraph,"Inception_1e-1x1","depthcat_1e/in1");
+    lgraph = connectLayers(lgraph,"Inception_1e-5x5","depthcat_1e/in3");
+    lgraph = connectLayers(lgraph,"Inception_1e-pool_proj","depthcat_1e/in4");
+    lgraph = connectLayers(lgraph,"Inception_1e-3x3","depthcat_1e/in2");
+    lgraph = connectLayers(lgraph,"depthcat_1e","addition_1ce/in1");
+    lgraph = connectLayers(lgraph,"Inception_1e","Inception_1f-5x5_reduce");
+    lgraph = connectLayers(lgraph,"Inception_1e","Inception_1f-3x3_reduce");
+    lgraph = connectLayers(lgraph,"Inception_1e","Inception_1f-pool");
+    lgraph = connectLayers(lgraph,"Inception_1e","Inception_1f-1x1");
+    lgraph = connectLayers(lgraph,"Inception_1f-5x5_relu","depthcat_1f/in3");
+    lgraph = connectLayers(lgraph,"Inception_1f-relu-pool_proj","depthcat_1f/in4");
+    lgraph = connectLayers(lgraph,"Inception_1f-3x3_relu","depthcat_1f/in2");
+    lgraph = connectLayers(lgraph,"Inception_1f-1x1_relu","depthcat_1f/in1");
+end
+
+%% FUNCTION TO CALCULATE ACCURACY OF A DATASTORE
+function accuracy = calculateAccuracy(net, datastore)
+    YPred = classify(net,datastore);
+    YValidation = datastore.Labels;
+    % Calculate accuracy
+    accuracy = sum(YPred == YValidation)/numel(YValidation);
+end
+
+%% FUNCTION TO CALCULATE AD PLOT A CONFUSION MATRIX
+function calculateConfusionMatrix(net, datastore, datasetName, withNoGesture)
+    % Get predictions of each frame
+    predLabels = classify(net, datastore);
+    realLabels = datastore.Labels;
+    
+    % Stablish clases
+    classes = categorical(Shared.setNoGestureUse(withNoGesture));
+    
+    % Create the confusion matrix
+    confusionMatrix = confusionmat(realLabels, predLabels, 'Order', classes);
+    figure('Name', ['Confusion Matrix - ' datasetName])
+        matrixChart = confusionchart(confusionMatrix, classes);
+        % Chart options
+        matrixChart.ColumnSummary = 'column-normalized';
+        matrixChart.RowSummary = 'row-normalized';
+        matrixChart.Title = ['Hand gestures - ' datasetName];
+        sortClasses(matrixChart,classes);
+end
+
+%% EXTRA THINGS
+%{
+
+    %% DIVIDE DATASTORE
 
 %% FUNCTION TO DIVIDE DATASTORE IN TWO HALVES
-function [firstDatstore, secondDatastore] = divideDatastore(dataStore)
-    % First datstore(50%) && second datastore(50%)
-    firstDatstore =  partition(dataStore,2,1);
-    secondDatastore = partition(dataStore,2,2);
+function [firstDatstore, secondDatastore] = divideDatastore(dataStore, percentage)
+    % First datstore(percentage%) && second datastore(1 - percentage%)
+    [firstDatstore, secondDatastore] =  partition(dataStore, percentage);
 end
 
-%% FUNCTION TO SET THE AMOUNT OF DATA
-function datastore = setDataAmount(datastore, dataAmount)
-    % Obtain the limit value index
-    idxLimit = floor(size(datastore.Labels,1) * dataAmount);
-    % The data is split within the datastore
-    datastore.Datastore.Files = datastore.Datastore.Files(1:idxLimit);
-    datastore.Labels = datastore.Labels(1:idxLimit);
-    % NumObservations must be counted again
-    reset(datastore);
-end
 
-%% FUNCTION TO PLOT A COMPARISON (REAL/PREDICTED) OF A SAMPLE FROM DATASTORE
-function plotPredictionDatastore(net, datastore, idx)
-    reset(datastore)
-    % Validate number of sample
-    idxMax = datastore.NumObservations;
-    if idx<1, idx=1; elseif idx>idxMax, idx=idxMax; end
-    % Recovering the sample
-    batch_size = datastore.MiniBatchSize;
-    count = 0;
-    while idx > count
-        data = read(datastore);
-        count = count + batch_size;
-    end
-    idx = idx - (count - batch_size);
-    yPred = classify(net,data.sequences{idx});
-    yReal = data.labelSequences{idx};
-    plotPredictionComparison(yReal, yPred);
-    reset(datastore);
-end
+    %% TSNE
 
-%% FUNCTION TO PLOT A COMPARISON (REAL/PREDICTED)
-function plotPredictionComparison(YTest, YPred)
+%% ANALIZE CHARACTERISTIC EXTRACTOR USING T-SNE
+% Inputs: datastore, net, layer, numSamples, numPCAComponents, perplexity
+tsneAnalisis(trainingDatastore, net, 'depthcat_1', 50, 50, 20); % data % [data, acts]
+
+%% FUNCTION TO PLOT T-SNE IN 2D
+function tsne2D(acts, cats, numPCAComponents, perplexity)
+    newPoints = tsne(acts, 'NumPCAComponents', numPCAComponents, 'Perplexity', perplexity);
     figure
-    plot(YPred,'.-')
-    hold on
-    plot(YTest)
-    hold off
-    xlabel("Frame")
-    ylabel("Gesture")
-    title("Predicted Gestures")
-    legend(["Predicted" "Test Data"])
+    gscatter(newPoints(:,1),newPoints(:,2),cats);
 end
 
-%% FUCTION TO EVALUATE DATA USING THE VALIDATION LIBRARY
-function evaluateDataStore(net, datastore)
-    reset(datastore)
-    numObservations = datastore.NumObservations;
-    % Allocate space to save the results
-    [clasifications, predictions, overlapings, procesingTimes] = preallocateValidationResults(numObservations);
-    % Index initialization
-    idx = 1;
-    while hasdata(datastore)
-        [data, info] = read(datastore);
-        labels = info.labels;
-        groundTruths = info.groundTruths;
-        timepointSequences = info.timePointSequences;
-        for i = 1:length(labels)
-            gestureName = labels{i};
-            % Original information
-            repInfo.gestureName = gestureName;
-            if ~isequal(gestureName,'noGesture')
-                repInfo.groundTruth = groundTruths{i};
-            end
-            % Predict and calculate time
-            timer = tic;
-            yPred = classify(net,data.sequences(i));
-            time = toc(timer);
-            % Classify prediction
-            class = classifyPredictions(yPred{1});
-            % Predicteed information
-            response.vectorOfLabels = yPred{1};
-            response.vectorOfTimePoints = timepointSequences{i};
-            nFrames = length(yPred{1});
-            time_frame = time / nFrames;
-            response.vectorOfProcessingTimes = time_frame*ones(1,nFrames);
-            response.class = class;
-            % Evaluate
-            result = evalRecognition(repInfo, response);
-            % Save results
-            clasifications(idx) = result.classResult;
-            if ~isequal(gestureName,'noGesture')
-                predictions(idx) = result.recogResult;
-                overlapings(idx) = result.overlappingFactor;
-            end
-            procesingTimes(idx) = time;
-            idx = idx + 1;
-        end
-    end
-    calculateValidationResults(clasifications, predictions, procesingTimes, overlapings);
+%% FUNCTION TO PLOT T-SNE IN 3D
+function tsne3D(acts, cats, numPCAComponents, perplexity)
+    newPoints3D = tsne(acts,'Algorithm','barneshut', 'NumPCAComponents', numPCAComponents, ...
+        'NumDimensions',3, 'Perplexity', perplexity);
+    figure;
+    scatter3(newPoints3D(:,1),newPoints3D(:,2),newPoints3D(:,3),15,cats,'filled');
+    view(-93,14);
 end
 
-%% FUCTION TO PREALLOCATE SPACE FOR VALIDATION LIBRARY RESULT
-function [clasifications, predictions, overlapings, procesingTimes] = preallocateValidationResults(numObservations)
-    % Allocate space to save the results
-    clasifications = zeros(numObservations, 1);
-    predictions = -1*ones(numObservations, 1);
-    overlapings = zeros(numObservations, 1);
-    procesingTimes = zeros(numObservations, 1);
+%% FUNCTION TO PLOT T-SNE IN 2D WITH DIFERENT DISTANCES
+function tsneDistancesEval(acts, cats, numPCAComponents, perplexity)
+    figure;
+    % Cosine
+    Y = tsne(acts,'Algorithm','exact','Distance','cosine', ...
+        'NumPCAComponents', numPCAComponents, 'Perplexity', perplexity);
+    subplot(1,3,1);
+    gscatter(Y(:,1),Y(:,2),cats);
+    title('Cosine');
+    % Chebychev
+    Y = tsne(acts,'Algorithm','exact','Distance','chebychev', ...
+        'NumPCAComponents', numPCAComponents, 'Perplexity', perplexity);
+    subplot(1,3,2)
+    gscatter(Y(:,1),Y(:,2),cats)
+    title('Chebychev')
+    % Euclidean
+    Y = tsne(acts,'Algorithm','exact','Distance','euclidean', ... 
+        'NumPCAComponents', numPCAComponents, 'Perplexity', perplexity);
+    subplot(1,3,3)
+    gscatter(Y(:,1),Y(:,2),cats)
+    title('Euclidean')
 end
 
-%% FUNCTION TO CLASSIFY PREDICTIONS
-function class = classifyPredictions(yPred)
-    gestures = categorical({'fist'; 'noGesture'; 'open'; 'pinch'; 'waveIn'; 'waveOut'});
-    catCounts = countcats(yPred);
-    [catCounts,indexes] = sort(catCounts,'descend');
-    newCategories = gestures(indexes);
-    if catCounts(2) >= 4
-       class = newCategories(2);
-    else
-       class = gestures(2);
-    end
+%% FUNCTION TO EVLUATE A DATASTORE SAMPLE USING T-SNE
+function [data, acts] = tsneAnalisis(datastore, net, layer, numSamples, numPCAComponents, perplexity)
+    rng default % for reproducibility
+    % Get samples
+    originalMinibatch = datastore.MiniBatchSize;
+    reset(datastore);
+    datastore.MiniBatchSize = numSamples;
+    data = read(datastore);
+    % Get labels
+    labels = cellfun(@(label) label, data.responses);
+    % Get activations from layer
+    acts = activations(net, data, layer);
+    % Reshape the activations
+    actDims = size(acts);
+    acts = reshape(acts, actDims(4), prod(actDims(1:3)));
+    % Make t-sne analysis
+    tsne2D(acts, labels, numPCAComponents, perplexity);
+    tsne3D(acts, labels, numPCAComponents, perplexity);
+    tsneDistancesEval(acts, labels, numPCAComponents, perplexity);
+    % Reset the dataset
+    datastore.MiniBatchSize = originalMinibatch;
+    reset(datastore);
 end
 
-%%
-function calculateValidationResults(clasifications, predictions, procesingTimes, overlapings)
-    % Perform the calculation
-    accClasification = sum(clasifications==1) / length(clasifications);
-    accPrediction = sum(predictions==1) / sum(predictions==1 | predictions==0);
-    avgProcesing_time = mean(procesingTimes);
-    avgOverlapingFactor = mean(overlapings(overlapings ~= 0 & ~isnan(overlapings)));
-    % Display the results
-    fprintf('Classification accuracy: %f\n',accClasification);
-    fprintf('Prediction accuracy: %f\n',accPrediction);
-    fprintf('Avegage procesing time: %f\n',avgProcesing_time);
-    fprintf('Avegage overlaping factor: %f\n\n',avgOverlapingFactor);
-end
+    %%NETWORK
 
-%% ARQUITECTURAS PROVADAS
-%{
-layers = [ ...
-    sequenceInputLayer(dimensions)
-    flattenLayer
-    lstmLayer(numHiddenUnits,'OutputMode','sequence')
-    fullyConnectedLayer(numClasses)
-    softmaxLayer
-    classificationLayer];
-%}
-%{
-convolution2dLayer(filterSize,numFilters,'Name','conv_1') 
-    batchNormalizationLayer('Name','bn_1')
-    reluLayer('Name','relu_1')
-    maxPooling2dLayer([2 2],"Name","maxpool_1")
-%}
-%{
-layers = [ ...
-    sequenceInputLayer(inputSize,'Name','input')
-    
-    sequenceFoldingLayer('Name','fold')
-    
-    convolution2dLayer(filterSize,numFilters,'Name','conv')
-    batchNormalizationLayer('Name','bn')
-    reluLayer('Name','relu')
-    %
-    maxPooling2dLayer([2 2],"Name","maxpool")
-    
-    dropoutLayer(0.2,"Name","drop")
-    
-    convolution2dLayer(filterSize,2*numFilters,'Name','conv_1') 
-    batchNormalizationLayer('Name','bn_1')
-    reluLayer('Name','relu_1')
-    maxPooling2dLayer([2 2],"Name","maxpool_1")
-    
-    %
-    
-    sequenceUnfoldingLayer('Name','unfold')
-    flattenLayer('Name','flatten')
-    
-    lstmLayer(numHiddenUnits,'OutputMode','sequence','Name','lstm')
-    
-    fullyConnectedLayer(numClasses, 'Name','fc')
-    softmaxLayer('Name','softmax')
-    classificationLayer('Name','classification')];
-%}
-%{
-    function calculateClassificationAccuracy(datastore)
-        while(hasdata(datastore))
-            [data,info] = read(datastore);
-            sequences_pred = classify(net,data.sequences);
+% Create layer graph
+lgraph = layerGraph();
+% Add layer branches
+tempLayers = imageInputLayer(inputSize,"Name","data");
+lgraph = addLayers(lgraph,tempLayers);
 
-            yReal = info.label;
-            for i = 1:length(yReal)
-                data_similarity(idx) = sum(sequences_pred{i} == yReal{i})./numel(yReal{i});
-                idx = idx + 1;
-            end
-        end
-    end
+tempLayers = [
+    convolution2dLayer([1 1],16,"Name","Inception_1a-3x3_reduce")
+    reluLayer("Name","Inception_1a-3x3_relu_reduce")
+    convolution2dLayer([3 3],18,"Name","Inception_1a-3x3","Padding",[1 1 1 1])
+    reluLayer("Name","Inception_1a-3x3_relu")];
+lgraph = addLayers(lgraph,tempLayers);
+
+tempLayers = [
+    maxPooling2dLayer([3 3],"Name","Inception_1a-pool","Padding",[1 1 1 1])
+    convolution2dLayer([1 1],18,"Name","Inception_1a-pool_proj")
+    reluLayer("Name","Inception_1a-relu-pool_proj")];
+lgraph = addLayers(lgraph,tempLayers);
+
+tempLayers = [
+    convolution2dLayer([1 1],18,"Name","Inception_1a-1x1")
+    reluLayer("Name","Inception_1a-1x1_relu")];
+lgraph = addLayers(lgraph,tempLayers);
+
+tempLayers = [
+    convolution2dLayer([1 1],16,"Name","Inception_1a-5x5_reduce")
+    reluLayer("Name","Inception_2a-5x5_relu_reduce_2")
+    convolution2dLayer([5 5],18,"Name","Inception_1a-5x5","Padding",[2 2 2 2])
+    reluLayer("Name","Inception_1a-5x5_relu")];
+lgraph = addLayers(lgraph,tempLayers);
+
+tempLayers = [
+    depthConcatenationLayer(4,"Name","depthcat_1")
+    crossChannelNormalizationLayer(5,"Name","crossnorm_4")
+    dropoutLayer(0.5,"Name","dropout")
+    fullyConnectedLayer(numClasses,"Name","fc_1")
+    softmaxLayer("Name","softmax")
+    classificationLayer("Name","classoutput")];
+lgraph = addLayers(lgraph,tempLayers);
+% clean up helper variable
+lgraph = connectLayers(lgraph,"data","Inception_1a-3x3_reduce");
+lgraph = connectLayers(lgraph,"data","Inception_1a-pool");
+lgraph = connectLayers(lgraph,"data","Inception_1a-1x1");
+lgraph = connectLayers(lgraph,"data","Inception_1a-5x5_reduce");
+lgraph = connectLayers(lgraph,"Inception_1a-relu-pool_proj","depthcat_1/in4");
+lgraph = connectLayers(lgraph,"Inception_1a-1x1_relu","depthcat_1/in1");
+lgraph = connectLayers(lgraph,"Inception_1a-3x3_relu","depthcat_1/in2");
+lgraph = connectLayers(lgraph,"Inception_1a-5x5_relu","depthcat_1/in3");
+
+
 %}
-%{
-    %% CALCULATE ACCURACIES
-    training_acc = calculateAccuracy(net,trainingDatastore);
-    validation_acc = calculateAccuracy(net, validationDatastore);
-    testing_acc = calculateAccuracy(net, testingDatastore);
-    % Print accuracies
-    text_training_acc = ['Training samples: ', num2str(training_acc)];
-    text_validation_acc = ['Validation samples: ', num2str(validation_acc)];
-    text_testing_acc = ['Testing samples: ', num2str(testing_acc)];
-    % The amount of training-validation-tests data is printed
-    fprintf('\n%s\n%s\n%s\n',text_training_acc, text_validation_acc, text_testing_acc);
-    clear text_training_acc text_validation_acc text_testing_acc
-%}
-%{
-    %% FUNCTION TO CALCULATE ACCURACY
-    function acc = calculateAccuracy(net, datastore)
-        data_similarity = zeros(datastore.NumObservations, 1);
-        idx = 1;
-        while(hasdata(datastore))
-            data = read(datastore);
-            yPred = classify(net,data.sequences);
-            yReal = data.label_sequences;
-            for i = 1:length(yReal)
-                data_similarity(idx) = sum(yPred{i} == yReal{i})./numel(yReal{i});
-                idx = idx + 1;
-            end
-        end
-        acc = mean(data_similarity);
-        reset(datastore);
-    end
-%}
-%{
-    layers = [ ...
-        sequenceInputLayer(inputSize,'Name','input')
 
-        sequenceFoldingLayer('Name','fold')
-
-        convolution2dLayer(filterSize,numFilters,'Name','conv')
-        batchNormalizationLayer('Name','bn')
-        reluLayer('Name','relu')
-
-        sequenceUnfoldingLayer('Name','unfold')
-        flattenLayer('Name','flatten')
-
-        lstmLayer(numHiddenUnits,'OutputMode','sequence','Name','lstm')
-
-        fullyConnectedLayer(numClasses, 'Name','fc')
-        softmaxLayer('Name','softmax')
-        classificationLayer('Name','classification')];
-%}
