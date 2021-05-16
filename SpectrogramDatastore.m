@@ -30,19 +30,23 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
                 'ReadFcn',@readDatastore, ...
                 'IncludeSubfolders',true);
             ds.Datastore = fds;
+            
             % Read labels from folder names
             [labels, numObservations] = Shared.createLabels(fds.Files, withNoGesture);
             ds.Labels = labels;
             ds.NumClasses = numel(unique(labels));
+            
             % Determine sequence dimension
             filename = ds.Datastore.Files{1};
             sample = load(filename).data;
             ds.DataDimensions = size(sample);
+            
             % Initialize datastore properties
             ds.MiniBatchSize = 32;
             ds.NumObservations = numObservations;
             ds.CurrentFileIndex = 1;
-            % shuffle
+            
+            % Shuffle
             ds = balanceGestureSamples(ds);
             ds = shuffle(ds);
         end
@@ -59,6 +63,7 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
             miniBatchSize = ds.MiniBatchSize;
             predictors = cell(miniBatchSize, 1);
             responses = cell(miniBatchSize, 1);
+            
             % Data for minibatch size is read
             for i = 1:miniBatchSize
                 %data = read(ds.Datastore).data;
@@ -68,6 +73,7 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
                 responses{i,1} = class;
                 ds.CurrentFileIndex = ds.CurrentFileIndex + 1;
             end
+            
             % Data is preprocessed;
             data = preprocessData(ds, predictors, responses);
         end
@@ -92,28 +98,37 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
         function [ds1, ds2] = partition(ds, percentage)
             % Create copys to set the result
             ds1 = copy(ds); ds2 = copy(ds);
+            
             % Get the limit of the new division
             numObservations = ds.NumObservations;
             numClassSamples = floor(numObservations / ds.NumClasses);
             limitOfSamples = floor(numClassSamples*percentage);
+            
             % Match the specidfied number of samples and order them
             dsNew = matchSampleNumberInOrder(ds, numClassSamples);
             dsLabels = dsNew.Labels;
             dsFiles = dsNew.Datastore.Files;
+            
             % Create cell to set the new labels and files
             ds1Labels = {}; ds1Files = {}; ds2Labels = {}; ds2Files = {};
+            
             % Divide data per gesture
             parfor i = 1:ds.NumClasses
+                
+                % Calculate the samples per partition
                 labels = dsLabels;
                 files = dsFiles;
                 start = ((i-1) * numClassSamples) + 1;
                 limit = start + limitOfSamples;
                 last = i * numClassSamples;
+                
+                % Set new number of files and labels
                 ds1Labels = [ds1Labels; labels(start:limit-1, 1)];
                 ds1Files = [ds1Files; files(start:limit-1, 1)];
                 ds2Labels = [ds2Labels; labels(limit:last, 1)];
                 ds2Files = [ds2Files; files(limit:last, 1)];
             end
+            
             % Set the data to new datastores
             ds1 = prepareNewDatastore(ds1, ds1Labels, ds1Files);
             ds2 = prepareNewDatastore(ds2, ds2Labels, ds2Files);
@@ -125,21 +140,17 @@ classdef SpectrogramDatastore < matlab.io.Datastore & ...
             fds = dsNew.Datastore;
             % Shuffle tthe filedatastore
             [fds, idxs] = Shared.shuffle(fds);
-            
-            % Shuffle files and their corresponding labels
-            %numObservations = dsNew.NumObservations;
-            %rng(9); % seed
-            %idx = randperm(numObservations);
-            %fds.Files = fds.Files(idx);
-            
+            % Save new order
             dsNew.Datastore = fds;
             dsNew.Labels = dsNew.Labels(idxs);
         end
         
         function dsNew = balanceGestureSamples(ds)
+            % Calcule the class with less samples
             labels = ds.Labels;
             catCounts = sort(countcats(labels));
             minNumber = catCounts(1);
+            % get a new balanced datastore and shuflle it
             dsNew = matchSampleNumberInOrder(ds, minNumber);
             dsNew = shuffle(dsNew);
         end
@@ -191,26 +202,34 @@ function ds = matchSampleNumberInOrder(ds, repetitions)
     labels = ds.Labels;
     gesturefiles = ds.Datastore.Files;
     gestures = categorical(categories(labels));
+    
     % Allocate space for results
-    newLabels = {};
-    newFiles = {};
+    newLabels = {}; newFiles = {};
+    
     % Get equal number of samples for each gesture
     parfor i = 1:length(gestures)
         files = gesturefiles;
         gestureLabels = cell(repetitions, 1);
         gestureFiles = cell(repetitions, 1);
+        
         % Put 1s where is the gesture and 0s where is not
         isGesture = ismember(labels, gestures(i));
         % Get indexes of ones
         gestureIdxs = find(isGesture);
+        
+        % Save daat until the limit (repetitions)
         for j = 1:repetitions
             gestureLabels{j, 1} = char(gestures(i));
             gestureFiles{j, 1} = files{gestureIdxs(j)};
         end
+        
+        % Concatenate the labels and files
         newLabels = [newLabels; gestureLabels];
         newFiles = [newFiles; gestureFiles];
     end
+    % Make data categorical
     newLabels = categorical(newLabels,categories(gestures));
+    
     % Save the transformed data
     ds.Labels = newLabels;
     ds.NumObservations = length(newLabels);

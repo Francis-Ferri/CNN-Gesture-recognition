@@ -23,6 +23,7 @@ end
 %% PREPORCESS THE SIGNAL
 [Fb, Fa] = butter(5, 0.1, 'low'); % Wn = Fc/(Fs/2)
 filteredSignal = Shared.preProcessEMGSegment(sample.signal, Fa, Fb, 'abs');
+% Clean up variables
 clear Fb Fa
 
 %% PLOT SIGNAL AND SPECTROGRAMS OF EACH CHANNEL
@@ -48,13 +49,17 @@ groundTruthMid = floor((sample.groundTruthIdx(2) + sample.groundTruthIdx(1)) / 2
 start = groundTruthMid - floor(Shared.FRAME_WINDOW / 2);
 finish = groundTruthMid + floor(Shared.FRAME_WINDOW / 2);
 signal = filteredSignal(start:finish-1, :);
+
 % Plot the signal and spectrogram for each channel
 plotSignalChanels(user, type, numSample, sample.gesture, signal);
 plotSpectrogramChanels(user, type, numSample, sample.gesture, signal);
+
+% Clean up variables
 clear groundTruthMid start finish signal
 
 %% GET SPECIFIC SAMPLE FROM A USER
 function sampleData = getSample(dataPath, user, numSample, type)
+    
     % Get user samples
     [trainingSamples, validationSamples] = Shared.getTrainingTestingSamples(dataPath, user);
     samplesKeys = fieldnames(trainingSamples); % Same for validation
@@ -64,6 +69,7 @@ function sampleData = getSample(dataPath, user, numSample, type)
         samples = trainingSamples;
     end
     sample = samples.(samplesKeys{numSample});
+    
     % Get signal data
     sampleData.gesture = sample.gestureName;
     sampleData.signal = Shared.getSignal(sample.emg);
@@ -150,24 +156,33 @@ function visualizeFrames(signal, sample, user, numSample,channel, type)
     groundTruth = sample.groundTruth;
     numGesturePoints = sample.groundTruthLength;
     numWindows = floor((length(signal) - Shared.FRAME_WINDOW) / Shared.WINDOW_STEP) + 1;
+    
     % Figure creation
     plotPosition = 1;
     figure('Name', strcat(user, '-', type, '-',  int2str(numSample), '-', string(sample.gesture), '-', int2str(channel)));
     for i = 1:numWindows
+        
+        % Get window information
         traslation = ((i-1) * Shared.WINDOW_STEP);
         inicio = 1 + traslation;
         finish = Shared.FRAME_WINDOW + traslation;
         timestamp = inicio + floor(Shared.FRAME_WINDOW/2);
         frameGroundTruth = groundTruth(inicio: finish);
         totalOnes = sum(frameGroundTruth == 1);
+        
+        % Check if the window is over the threasholds
         if totalOnes >= Shared.FRAME_WINDOW * Shared.TOLERANCE_WINDOW || ...
                 totalOnes >= numGesturePoints * Shared.TOLERNCE_GESTURE
             frameSignal = signal(inicio:finish, channel);
+            
+            % Choose between signal or spectrogram
             if isequal(type, 'signal')
                 subplotSignal(plotPosition, frameSignal, timestamp)
             elseif isequal(type, 'spectrogram')
                 subPlotSpectrogram(plotPosition, frameSignal, timestamp);
             end
+            
+            % Slide the window
             plotPosition = plotPosition + 1;
         end
     end

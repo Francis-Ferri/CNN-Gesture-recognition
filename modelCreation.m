@@ -11,10 +11,13 @@ dataDirTesting = fullfile('Datastores', 'testing');
 % The classes are defined
 withNoGesture = true;
 classes = Shared.setNoGestureUse(withNoGesture);
+
+% The datastores are created
 trainingDatastore = SpectrogramDatastore(dataDirTraining, withNoGesture);
 validationDatastore = SpectrogramDatastore(dataDirValidation, withNoGesture);
 testingDatastore = SpectrogramDatastore(dataDirTesting, withNoGesture);
 %dataSample = preview(trainingDatastore);
+% Clean up variables
 clear dataDirTraining dataDirValidation
 
 %% THE INPUT DIMENSIONS ARE DEFINED
@@ -33,13 +36,14 @@ numValidationSamples = ['Validation samples: ', num2str(validationDatastore.NumO
 numTestingSamples = ['Testing samples: ', num2str(testingDatastore.NumObservations)];
 % The amount of training-validation-tests data is printed
 fprintf('\n%s\n%s\n%s\n', numTrainingSamples, numValidationSamples, numTestingSamples);
+% Clean up variables
 clear numTrainingSamples numValidationSamples numTestingSamples
 
 %% THE NEURAL NETWORK ARCHITECTURE IS DEFINED
 numClasses = trainingDatastore.NumClasses;
 lgraph = setNeuralNetworkArchitecture(inputSize, numClasses);
 analyzeNetwork(lgraph);
-% Clean up helper variable
+% Clean up variables
 clear numClasses
 
 %% THE OPTIONS ARE DIFINED
@@ -61,23 +65,28 @@ options = trainingOptions('adam', ...
     'ValidationFrequency',floor(trainingDatastore.NumObservations/ miniBatchSize), ...
     'ValidationPatience',5, ...
     'Plots','training-progress');
+% Clean up variables
 clear maxEpochs miniBatchSize
 
 %% NETWORK TRAINING
 net = trainNetwork(trainingDatastore, lgraph, options);
+% Clean up variables
 clear options lgraph
 
 %% ACCURACY FOR EACH DATASET
-% Get training-validation-tests accuracies
+% The accuracy for training-validation-tests is obtained
 accTraining = calculateAccuracy(net, trainingDatastore);
 accValidation = calculateAccuracy(net, validationDatastore);
 accTesting = calculateAccuracy(net, testingDatastore);
-% The total data for training-validation-tests is obtained
+
+
+% The amount of training-validation-tests data is printed
 strAccTraining = ['Training accuracy: ', num2str(accTraining)];
 strAccValidation = ['Validation accuracy: ', num2str(accValidation)];
 strAccTesting = ['Testing accuracy: ', num2str(accTesting)];
-% The amount of training-validation-tests data is printed
 fprintf('\n%s\n%s\n%s\n', strAccTraining, strAccValidation, strAccTesting);
+
+% Clean up variables
 clear accTraining accValidation accTesting strAccTraining strAccValidation strAccTesting
 
 %% CONFUSION MATRIX FOR EACH DATASET
@@ -332,8 +341,10 @@ function calculateConfusionMatrix(net, datastore, datasetName, withNoGesture)
     % Get predictions of each frame
     predLabels = classify(net, datastore);
     realLabels = datastore.Labels;
+    
     % Stablish clases
     classes = categorical(Shared.setNoGestureUse(withNoGesture));
+    
     % Create the confusion matrix
     confusionMatrix = confusionmat(realLabels, predLabels, 'Order', classes);
     figure('Name', ['Confusion Matrix - ' datasetName])

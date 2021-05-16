@@ -38,6 +38,7 @@ function [frames, labels, start] = readFrames(fds, start, miniBatchSize)
     files = fds.Files(start:finish,1);
     frames = cell(miniBatchSize,1);
     labels = cell(miniBatchSize,1);
+    % For file in minibatch
     for i = 1:miniBatchSize
         filepath = fileparts(files{i,1}); % ../datastore/class
         % The last part of the path is the label
@@ -54,7 +55,8 @@ function subPlotSpectrogram(plotPosition, frame, label, channel)
     f = 1:size(frame, 1);
     t = 1:size(frame, 2);
     ps = frame(:,:,channel);
-    subplot(3, 5, plotPosition) % 15 spaces to plot
+    % Space = 15 spaces to plot
+    subplot(3, 5, plotPosition) 
         surf(t,f,ps,'EdgeColor','none');   
         axis xy; axis tight; colormap(jet); view(0,90);
         title(strcat('Gesture-', label));
