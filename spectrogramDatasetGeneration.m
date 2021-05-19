@@ -37,6 +37,13 @@ for i = 1:length(usersSets)
     users = usersSets{i,1};
     usersSet = usersSets{i,2};
     
+    % Set datastores
+    if isequal(usersSet, 'usersTrainVal')
+        [datastore1, datastore2] = deal(trainingDatastore, validationDatastore);
+    elseif isequal(usersSet, 'usersTest')
+        [datastore1, datastore2] = deal(testingDatastore, testingDatastore);
+    end
+        
     parfor j = 1:length(users)
         % Get user samples
         [trainingSamples, validationSamples] = Shared.getTrainingTestingSamples(trainingPath, users(j));
@@ -44,22 +51,14 @@ for i = 1:length(usersSets)
         % Transform samples
         transformedSamplesTraining = generateData(trainingSamples);
         transformedSamplesValidation = generateData(validationSamples);
-        
+       
         % Save samples
-        if isequal(usersSet, 'usersTrainVal')
-            
-            saveSampleInDatastore(transformedSamplesTraining, users(j), 'train', trainingDatastore);
-            saveSampleInDatastore(transformedSamplesValidation, users(j), 'validation', validationDatastore);
-            
-        elseif isequal(usersSet, 'usersTest')
-            
-            saveSampleInDatastore(transformedSamplesTraining, users(j), 'train', testingDatastore);
-            saveSampleInDatastore(transformedSamplesValidation, users(j), 'validation', testingDatastore);
-        end 
+        saveSampleInDatastore(transformedSamplesTraining, users(j), 'train', datastore1);
+        saveSampleInDatastore(transformedSamplesValidation, users(j), 'validation', datastore2);
     end
 end
 % Clean up variables
-clear i j categories validationSamples transformedSamplesValidation users usersSet
+clear i j categories validationSamples transformedSamplesValidation users usersSet datastore1 datastore2
 
 %% INCLUDE NOGESTURE
 % Define the directories where the frames will be found
@@ -94,6 +93,7 @@ testingDatastore = createDatastore(datastores{3,1}, categories);
 clear categories datastores
 
 %% GENERATION OF NOGESTURE SPECTROGRAMS TO CREATE THE MODEL
+
 % Get the number of noGesture per dataset
 noGestureTraining = noGesturePerUser{1,1};
 noGestureValidation = noGesturePerUser{2,1};
@@ -104,29 +104,26 @@ for i = 1:length(usersSets)
     users = usersSets{i,1};
     usersSet = usersSets{i,2};
     
+    % Set noGesture size and datastores
+    if isequal(usersSet, 'usersTrainVal')            
+        [noGestureSize1 ,noGestureSize2, datastore1, datastore2] = deal(noGestureTraining, ... 
+                noGestureValidation, trainingDatastore, validationDatastore);
+    elseif isequal(usersSet, 'usersTest')
+        [noGestureSize1 ,noGestureSize2, datastore1, datastore2] = deal(noGestureTesting, ... 
+            noGestureTesting, testingDatastore, testingDatastore);
+    end
+    
     parfor j = 1:length(users)
         % Get user samples
         [trainingSamples, validationSamples] = Shared.getTrainingTestingSamples(trainingPath, users(j));
         
         % Transform samples
-        if isequal(usersSet, 'usersTrainVal')
-            % Transform samples
-            transformedSamplesTraining = generateDataNoGesture(trainingSamples, noGestureTraining);
-            transformedSamplesValidation = generateDataNoGesture(validationSamples, noGestureValidation);
-            
-            % Save samples
-            saveSampleInDatastore(transformedSamplesTraining, users(j), 'train', trainingDatastore);
-            saveSampleInDatastore(transformedSamplesValidation, users(j), 'validation', validationDatastore);
-            
-        elseif isequal(usersSet, 'usersTest')
-            % Transform samples
-            transformedSamplesTraining = generateDataNoGesture(trainingSamples, noGestureTesting);
-            transformedSamplesValidation = generateDataNoGesture(validationSamples, noGestureTesting);
-            
-            % Save samples
-            saveSampleInDatastore(transformedSamplesTraining, users(j), 'validation',testingDatastore);
-            saveSampleInDatastore(transformedSamplesValidation, users(j), 'train', testingDatastore);
-        end
+        transformedSamplesTraining = generateDataNoGesture(trainingSamples, noGestureSize1);
+        transformedSamplesValidation = generateDataNoGesture(validationSamples, noGestureSize2);
+
+        % Save samples
+        saveSampleInDatastore(transformedSamplesTraining, users(j), 'validation',datastore1);
+        saveSampleInDatastore(transformedSamplesValidation, users(j), 'train', datastore2);
     end
 end
 % Clean up variables
@@ -290,7 +287,7 @@ function saveSampleInDatastore(samples, user, type, dataStore)
             % Set data
             data = spectrograms{j, 1};
             
-            % Set the frame name
+            % Create a file name (user-type-sample-start-finish)
             start = floor(timestamps{j,1} - Shared.FRAME_WINDOW/2);
             finish = floor(timestamps{j,1} + Shared.FRAME_WINDOW/2);
             fileName = strcat(strtrim(user),'-', type, '-',int2str(i), '-', ...

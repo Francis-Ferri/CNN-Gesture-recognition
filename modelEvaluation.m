@@ -15,8 +15,8 @@ usersTest = users(limit+1:length(users), 1);
 clear dataDir trainingDir users numTestUsers limit
 
 %%                      BORRAR ESTO AL ACABAR SOLO ES PARA HACER PRUEBAS CON PORCIONES
-usersTrainVal = usersTrainVal(1:3);
-usersTest = usersTest(1:3);
+usersTrainVal = usersTrainVal(1:2);
+usersTest = usersTest(1:2);
 
 %% LOAD THE MODEL
 modelFile = 'model_26-04-2021_09-43-42';
@@ -156,6 +156,11 @@ end
 
 %% FUNCTION TO EVALUETE SAMPLES OF A USER
 function userResults = evaluateSamples(samples, model)
+
+
+% ===== JUST FOR TESTING =====
+data = cell(length(samples), 7);  
+% ===== JUST FOR TESTING =====
     
     % Preallocate space for results
     [classifications, recognitions, overlapings, procesingTimes] = preallocateUserResults(length(samples));
@@ -176,7 +181,11 @@ function userResults = evaluateSamples(samples, model)
         
         % Evaluate a sample with slidding window
         [labels, timestamps, processingTimes] = evaluateSampleFrames(emg, model);
-        
+
+% ===== JUST FOR TESTING =====
+firstLabels = labels;
+% ===== JUST FOR TESTING =====
+
         % Set a class for the sample
         class = classifyPredictions(labels);
         
@@ -198,9 +207,24 @@ function userResults = evaluateSamples(samples, model)
         end
         procesingTimes(i) = mean(processingTimes); %time (frame)
         
+% ===== JUST FOR TESTING =====
+data{i, 1} = result.classResult;
+data{i, 2} = result.recogResult;
+data{i, 3} = result.overlappingFactor;
+data{i, 4} = gesture;
+data{i, 5} = char(class);
+data{i, 6} = groundTruth;
+timestamps = num2cell(timestamps);
+data{i, 7} = [cellstr(firstLabels); cellstr(labels); timestamps];
+% ===== JUST FOR TESTING =====
+        
         % Set User Results
         userResults = struct('classifications', classifications,  'recognitions', ... 
             recognitions, 'overlapings', overlapings, 'procesingTimes', procesingTimes);
+        
+% ===== JUST FOR TESTING =====
+userResults.data = data;  
+% ===== JUST FOR TESTING =====
     end
 end
 

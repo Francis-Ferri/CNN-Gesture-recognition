@@ -1,3 +1,7 @@
+%{
+    
+%}
+
 classdef Shared
     
     properties (Constant)
@@ -19,6 +23,12 @@ classdef Shared
         FILLING_TYPE = 'before'
         POSTPROCESS = '1-1';
         
+        % For LSTM
+        NOGESTURE_FILL = 'all' % some
+        NOGESTURE_IN_SEQUENCE = 3;
+        WINDOW_STEP_LSTM = 15;
+        FILLING_TYPE_LSTM = 'before';
+        
         % Samples and signals
         numSamplesUser = 150;
         numGestureRepetitions = 25;
@@ -31,12 +41,6 @@ classdef Shared
     end
     
     methods(Static)
-        
-        % FUNCTION TO READ A FILE
-        function data = readFile(filename)
-            % Load a Matlab file
-            data = load(filename).data;
-        end
         
         % GET THE USER LIST
         function [users, dataPath] = getUsers(dataDir, subDir)
@@ -55,6 +59,12 @@ classdef Shared
             % Extract samples
             trainingSamples = jsonData.trainingSamples;
             testingSamples = jsonData.testingSamples;
+        end
+        
+        % FUNCTION TO READ A FILE
+        function data = readFile(filename)
+            % Load a Matlab file
+            data = load(filename).data;
         end
         
         % FUNCTION TO GET THE EMG SIGNAL
@@ -111,9 +121,9 @@ classdef Shared
             spectrograms = zeros(length(Shared.FRECUENCIES), numCols, Shared.numChannels);
             % Spectrograms generation
             for i = 1:size(signal, 2)
-                [~,~,~,ps] = spectrogram(signal(:,i), Shared.WINDOW, Shared.OVERLAPPING, ... 
-                    Shared.FRECUENCIES, sampleFrecuency, 'yaxis');
-                spectrograms(:,:,i) = ps;
+                [s,~,~,~] = spectrogram(signal(:,i), Shared.WINDOW, Shared.OVERLAPPING, ... 
+                    Shared.FRECUENCIES, sampleFrecuency, 'yaxis'); % ps
+                spectrograms(:,:,i) = abs(s);
             end
         end
         

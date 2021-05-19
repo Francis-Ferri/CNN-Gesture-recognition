@@ -217,7 +217,7 @@ function ds = matchSampleNumberInOrder(ds, repetitions)
         % Get indexes of ones
         gestureIdxs = find(isGesture);
         
-        % Save daat until the limit (repetitions)
+        % Save data until the limit (repetitions)
         for j = 1:repetitions
             gestureLabels{j, 1} = char(gestures(i));
             gestureFiles{j, 1} = files{gestureIdxs(j)};
