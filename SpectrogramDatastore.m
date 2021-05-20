@@ -197,7 +197,7 @@ function data = readDatastore(filename)
     data = load(filename);
 end
 
-%%
+%% FUNCTION TO MATCH THE NUMBER OF SAMPLES OF EACH GESTURE
 function ds = matchSampleNumberInOrder(ds, repetitions)
     labels = ds.Labels;
     gesturefiles = ds.Datastore.Files;
@@ -236,7 +236,7 @@ function ds = matchSampleNumberInOrder(ds, repetitions)
     ds.Datastore.Files = newFiles;
 end
 
-%%
+%% FUNCTION TO PREPARE A NEW DATASTORE
 function ds = prepareNewDatastore(ds, dsLabels, dsFiles)
     % Set the data to new datastores
     ds.NumObservations = length(dsLabels);

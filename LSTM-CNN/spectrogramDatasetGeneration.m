@@ -82,7 +82,7 @@ for i = 1:length(datastores) % parfor
         numFiles = length(fds.Files);
         numFramesSamples = zeros(numFiles, 1);
         for j = 1:numFiles
-            frames = load(fds.Files{j, 1}).data.frames;
+            frames = load(fds.Files{j, 1}).data.sequenceData;
             numFramesSamples(j, 1) = length(frames);
         end
         % Save the mean of frames for all samples
@@ -107,7 +107,7 @@ for i = 1:length(datastores) % parfor
             numFilesClass = length(filesClass);
             numFramesSamples = zeros(numFilesClass, 1);
             for k = 1:numFilesClass
-                frames = load(filesClass{k, 1}).data.frames; 
+                frames = load(filesClass{k, 1}).data.sequenceData; 
                 numFramesSamples(k, 1) = length(frames);                
             end
             
@@ -182,7 +182,7 @@ function datastore = createDatastore(datastore, labels)
 end
 
 %% FUNCTION TO GENERATE FRAMES
-function [data] = generateFrames(signal, groundTruth, numGesturePoints)
+function [data] = generateFrames(signal, groundTruth, numGesturePoints, gestureName)
 
     % Fill before frame classification
     if isequal(Shared.FILLING_TYPE_LSTM, 'before')
@@ -194,9 +194,9 @@ function [data] = generateFrames(signal, groundTruth, numGesturePoints)
 
     % Allocate space for the results
     numWindows = floor((length(signal)-Shared.FRAME_WINDOW) / Shared.WINDOW_STEP_LSTM) + 1;
-    data = cell(numWindows, 2);
+    data = cell(numWindows, 3);
+    data(:,2) = {'noGesture'};
     isIncluded = false(numWindows, 1);
-    
     % Creating frames
     for i = 1:numWindows
         
@@ -214,12 +214,13 @@ function [data] = generateFrames(signal, groundTruth, numGesturePoints)
         
         % Set data
         data{i,1} = spectrograms; % datum
-        data{i,2} = timestamp; % time
+        data{i,3} = timestamp; % time
         
         % Check the thresahold to consider gesture
         if totalOnes >= Shared.FRAME_WINDOW * Shared.TOLERANCE_WINDOW || ...
                 totalOnes >= numGesturePoints * Shared.TOLERNCE_GESTURE
             isIncluded(i,1) = true;
+            data{i,2} = gestureName;
         end
     end
     
@@ -276,7 +277,7 @@ function transformedSamples = generateData(samples)
         signal = Shared.preprocessSignal(signal);
         
         % Generate spectrograms
-        data = generateFrames(signal, groundTruth, numGesturePoints);
+        data = generateFrames(signal, groundTruth, numGesturePoints, gestureName);
         
         % Save the transformed data
         transformedSamples{i - noGesturePerUser, 1} = data;
@@ -287,28 +288,28 @@ end
 
 %% FUNCTION TO SAVE SPECTROGRAMS IN DATASTORE
 function saveSampleInDatastore(samples, user, type, dataStore)
-    
+
+
+%ARREGLAR LO DE LOS NOMBRES
     % For each sample
     for i = 1:length(samples)
         
         % Get data from trabnsformed samples
-        sequence = samples{i,1};
+        sequenceData = samples{i,1};
         class = samples{i,2};
         
         % Get data in sequence
-        frames = sequence(:,1);
-        timestamps = sequence(:,2);
+        timestamps = sequenceData(:,3);
         
         % Create a file name (user-type-sample-start-finish)
         fileName = strcat(strtrim(user),'-', type, '-',int2str(i), '-', ...
                 '[',int2str(timestamps{1,1}), '-', int2str(timestamps{length(timestamps), 1}), ']');
             
         % Set data to save
-        data.frames = frames;
+        data.sequenceData = sequenceData;
         if ~isequal(class,'noGesture')
             data.groundTruth = samples{i,3};
         end
-        data.timestamps = timestamps;
                 
         % Save data
         savePath = fullfile(dataStore, char(class), fileName);
@@ -328,7 +329,8 @@ function data = generateFramesNoGesture(signal, numWindows)
     end
 
     % Allocate space for the results
-    data = cell(numWindows, 2);
+    data = cell(numWindows, 3);
+    data(:,2) = {'noGesture'};
       
     % For each window
     for i = 1:numWindows
@@ -344,7 +346,7 @@ function data = generateFramesNoGesture(signal, numWindows)
         
         % Save data
         data{i,1} = spectrograms; % datum
-        data{i,2} = timestamp; % label
+        data{i,3} = timestamp; % label
     end  
 end
 

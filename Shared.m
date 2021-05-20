@@ -24,10 +24,12 @@ classdef Shared
         POSTPROCESS = '1-1';
         
         % For LSTM
-        NOGESTURE_FILL = 'all' % some
+        NOGESTURE_FILL = 'some' % some all
         NOGESTURE_IN_SEQUENCE = 3;
         WINDOW_STEP_LSTM = 15;
         FILLING_TYPE_LSTM = 'before';
+        SEQUENCE_INIT = 'noGesture'; % zeros
+        CONSIDER_PREVIOUS = true
         
         % Samples and signals
         numSamplesUser = 150;
