@@ -11,22 +11,16 @@ classdef SpectrogramDatastoreLSTM < matlab.io.Datastore & ...
         Datastore
         Labels
         SequenceLength
-        FrameDimensions %FrameSize DataDimensions
-        %NumClasses
+        FrameDimensions
+        NumClasses
         MiniBatchSize
-        
-        
-        HELPER
+        CurrentFileIndex
     end
     
     properties(SetAccess = protected)
         NumObservations
     end
-    
-    properties(Access = private)
-        CurrentFileIndex
-    end
-    
+        
     methods
         
         function ds = SpectrogramDatastoreLSTM(folder)
@@ -40,7 +34,7 @@ classdef SpectrogramDatastoreLSTM < matlab.io.Datastore & ...
             % Read labels from folder names
             [labels, numObservations] = Shared.createLabels(fds.Files, true);
             ds.Labels = labels;
-            %ds.NumClasses = numel(unique(labels));
+            ds.NumClasses = length(Shared.setNoGestureUse(true));
             
             % Initialize datastore properties
             ds.MiniBatchSize = 32;
@@ -53,13 +47,9 @@ classdef SpectrogramDatastoreLSTM < matlab.io.Datastore & ...
             % Determine sequence and frame dimensions
             sample = load(ds.Datastore.Files{1}).data;
             ds.FrameDimensions = size(sample.sequenceData{1,1});
-            if isequal(Shared.NOGESTURE_FILL, 'all')
-                ds.SequenceLength = length(sample.sequenceData);
-            elseif isequal(Shared.NOGESTURE_FILL, 'some')
-                ds.SequenceLength = 'variable';
-                ds = order(ds);
-            end
             
+            % Orden by length of frames
+            ds = order(ds);
         end
         
         function tf = hasdata(ds)
@@ -97,97 +87,66 @@ classdef SpectrogramDatastoreLSTM < matlab.io.Datastore & ...
             miniBatchSize = ds.MiniBatchSize;
             [sequences, labelsSequences, timestamps]  = deal(cell(miniBatchSize, 1));
             
-            if isequal(Shared.NOGESTURE_FILL, 'all')
-                % TODO ESTA IGUAL ASI QUE SOLO MANDAR
-                % Set sequence dimensions
-                numFrames = ds.SequenceLength;
-                sequenceDimensions = [ds.FrameDimensions, numFrames];
-                
-                parfor i = 1:miniBatchSize
-                    % Allocate space for new data with filling
-                    newSequence = zeros(sequenceDimensions);
-                    newLabels  = cell(1, numFrames);
-                    newTimestamps = cell(1, numFrames);
-                    sequenceData = sequencesData{i, 1};
-                    for j = 1:numFrames
-                        newSequence(:,:, :,j) = sequenceData{j,1};
-                        newLabels{1, j} = sequenceData{j,2};
-                        newTimestamps{1, j} = sequenceData{j,3};
-                    end
-                    sequences{i,1} = newSequence;
-                    labelsSequences{i,1} = categorical(newLabels, Shared.setNoGestureUse(true));
-                    timestamps{i,1} = newTimestamps;  
-                end
-                
-            elseif isequal(Shared.NOGESTURE_FILL, 'some')
-               
-                % Get max frame number in sequences
-                sequencesLengths = cellfun(@(sequence) length(sequence), sequencesData);
-                maxLength = max(sequencesLengths);
+            % Get max frame number in sequences
+            sequencesLengths = cellfun(@(sequence) length(sequence), sequencesData);
+            maxLength = max(sequencesLengths);
             
-                % Set sequence dimensions
-                sequenceDimensions = [ds.FrameDimensions, maxLength];
-        
-
-                if Shared.CONSIDER_PREVIOUS
-                    numRows = ds.FrameDimensions(1);
-                    numCols = ds.FrameDimensions(2);
-                    strideSequence = numCols - round((1 - (Shared.WINDOW_STEP_LSTM ... 
-                        / Shared.FRAME_WINDOW)) * numCols);
-                end
-                parfor i = 1:miniBatchSize
-                   
-                    
-                    % Allocate space for new data with filling 
-                    newLabels  = cell(1, maxLength);
-                    newTimestamps = cell(1, maxLength);
-                    newSequence = zeros(sequenceDimensions);
-                    
-                    
-                    % Initialize sequence space
-                    if isequal(Shared.SEQUENCE_INIT, 'noGesture')
-                        % ESTOY RELLENANDO DE LOS VALORES DE LA SEÑAL CUANDO DEBERIA RELLENAR DE LOS FRAMES
-                        %newSequence = (2 * Shared.noGestureStd) * rand(sequenceDimensions) ... 
-                            %+ (Shared.noGestureMean - Shared.noGestureStd);
-                        newSequence = zeros(sequenceDimensions);
-                    elseif isequal(Shared.SEQUENCE_INIT, 'zeros')
-                        newSequence = zeros(sequenceDimensions);
-                    end
-                    
-                    % Put original data 
-                    sequenceData = sequencesData{i, 1};
-                    numFrames = length(sequenceData);
-                    for j = 1:numFrames
-                        newSequence(:,:, :,j) = sequenceData{j,1};
-                        newLabels{1, j} = sequenceData{j,2};
-                        newTimestamps{1, j} = sequenceData{j,3};
-                    end
-                    
-                    % Put filling at the end to match the max length
-                    lastTimestamps = sequenceData{numFrames,3};
-                    lastFrame = sequenceData{numFrames,1};
-                    
-                    % EN ESTE BLOQUE ESTA EL ERROR
-                    for j = 1:(maxLength - numFrames)
-                        if Shared.CONSIDER_PREVIOUS
-                            % HAY QUE DETERMINAR CUANTO SE DESPLAZO EL
-                            % FRAME EN COLUMNAS
-                            frameRemain = lastFrame(:, 1+strideSequence:numCols, :);
-                            % DEBE DE SER UN REELENO QUE SIMULE NG
-                            filling = zeros(numRows, strideSequence, Shared.numChannels);
-                            newFrame = [frameRemain, filling];
-                            newSequence(:,:, :,j) = newFrame;
-                            lastFrame = newFrame;
-                        end
-                        newLabels{1, numFrames + j} = 'noGesture';
-                        newTimestamps{1, numFrames + j} = lastTimestamps + j * Shared.WINDOW_STEP_LSTM;
-                    end
-                    
-                    sequences{i,1} = newSequence;
-                    labelsSequences{i,1} = categorical(newLabels, Shared.setNoGestureUse(true));
-                    timestamps{i,1} = newTimestamps;
-                end
+            % Set sequence dimensions
+            sequenceDimensions = [ds.FrameDimensions, maxLength];
+                
+            %{
+            if Shared.CONSIDER_PREVIOUS
+                numRows = ds.FrameDimensions(1);
+                numCols = ds.FrameDimensions(2);
+                strideSequence = numCols - round((1 - (Shared.WINDOW_STEP_LSTM ... 
+                        / Shared.FRAME_WINDOW)) * numCols); % 1
             end
+            %}
+            
+            parfor i = 1:miniBatchSize
+                % Allocate space for new data with filling 
+                newLabels  = cell(1, maxLength);
+                newTimestamps = cell(1, maxLength);
+                
+                newSequence = zeros(sequenceDimensions);
+                
+                % if isequal(Shared.SEQUENCE_INIT, 'noGesture') % Rellenar
+                % con valores de frame de no gesture
+                
+                % Put original data 
+                sequenceData = sequencesData{i, 1};
+                numFrames = length(sequenceData);
+                for j = 1:numFrames
+                    newSequence(:,:, :,j) = sequenceData{j,1};
+                    newLabels{1, j} = sequenceData{j,2};
+                    newTimestamps{1, j} = sequenceData{j,3};
+                end
+                
+                % Put filling at the end to match the max length
+                lastTimestamps = sequenceData{numFrames,3};
+                %lastFrame = sequenceData{numFrames,1};
+                
+                
+                for j = 1:(maxLength - numFrames)
+                    %{
+                    if Shared.CONSIDER_PREVIOUS
+                        frameRemain = lastFrame(:, 1+strideSequence:numCols, :);
+                        % DEBE DE SER UN REELENO QUE SIMULE NG
+                        filling = zeros(numRows, strideSequence, Shared.numChannels);
+                        newFrame = [frameRemain, filling];
+                        newSequence(:,:, :,numFrames + j) = newFrame;
+                        lastFrame = newFrame;
+                    end
+                    %}
+                    newLabels{1, numFrames + j} = 'noGesture';
+                    newTimestamps{1, numFrames + j} = lastTimestamps + (j * Shared.WINDOW_STEP_LSTM);
+                end
+                    
+                sequences{i,1} = newSequence;
+                labelsSequences{i,1} = categorical(newLabels, Shared.setNoGestureUse(true));
+                timestamps{i,1} = newTimestamps;  
+            end
+            
             % Put the data in table form
             data = table(sequences, labelsSequences);
         end
@@ -274,11 +233,11 @@ classdef SpectrogramDatastoreLSTM < matlab.io.Datastore & ...
         end
         
         function ds = order(ds)
-            % Order the datasroes by number of frames
+            % Order the datastores by number of frames
             numObservations = ds.NumObservations;
             sequenceLengths = zeros(numObservations, 1);
             files =  ds.Datastore.Files;
-            parfor i=1:numObservations
+            for i=1:numObservations
                 filename = files{i};
                 sequenceData = load(filename).data.sequenceData;
                 sequenceLengths(i) = size(sequenceData, 1);

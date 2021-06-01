@@ -27,8 +27,8 @@ classdef Shared
         NOGESTURE_FILL = 'some' % some all
         NOGESTURE_IN_SEQUENCE = 3;
         WINDOW_STEP_LSTM = 15;
-        FILLING_TYPE_LSTM = 'before';
-        SEQUENCE_INIT = 'noGesture'; % zeros
+        FILLING_TYPE_LSTM = 'before'; % before none
+        SEQUENCE_INIT = 'noGesture'; % noGesture zeros
         CONSIDER_PREVIOUS = true
         
         % Samples and signals
@@ -125,7 +125,7 @@ classdef Shared
             for i = 1:size(signal, 2)
                 [s,~,~,~] = spectrogram(signal(:,i), Shared.WINDOW, Shared.OVERLAPPING, ... 
                     Shared.FRECUENCIES, sampleFrecuency, 'yaxis'); % ps
-                spectrograms(:,:,i) = abs(s);
+                spectrograms(:,:,i) = abs(s); % ps;
             end
         end
         
