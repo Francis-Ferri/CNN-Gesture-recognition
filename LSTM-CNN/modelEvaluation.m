@@ -1,5 +1,5 @@
 %{
-
+    LSTM
 %}
 
 %% DEFINE THE DIRECTORIES WHERE THE DATA WILL BE FOUND
@@ -19,8 +19,8 @@ usersTrainVal = usersTrainVal(1:2);
 usersTest = usersTest(1:2);
 
 %% LOAD THE MODEL
-modelFile = 'model_26-04-2021_09-43-42';
-modelFileName = fullfile('models', modelFile);
+modelFile = 'model_01-06-2021_11-10-52';
+modelFileName = fullfile('ModelsLSTM', modelFile);
 model = load(modelFileName).net;
 clear modelFile modelFileName
 
@@ -28,13 +28,13 @@ clear modelFile modelFileName
 % Allocate space to save the results
 % Training
 [classifications, recognitions, overlapings, procesingTimes] =  ... 
-    preallocateResults(length(usersTrainVal));
+    deal(zeros(length(usersTrainVal), Shared.numSamplesUser));
 % Validation
 [classificationsVal, recognitionsVal, overlapingsVal, procesingTimesVal] = ... 
-    preallocateResults(length(usersTrainVal));
+    deal(zeros(length(usersTrainVal), Shared.numSamplesUser));
 
 %% EVALUATE EACH USER FOR TRAINING AND VALIDATION
-for i = 1:length(usersTrainVal) % % parfor
+for i = 1:1 %length(usersTrainVal) % % parfor
     % Get user samples
     [trainingSamples, validationSamples] = Shared.getTrainingTestingSamples(trainingPath, usersTrainVal(i));
     
@@ -72,10 +72,10 @@ clear i trainingSamples validationSamples transformedSamplesValidation classific
 %% PREALLOCATE SPACE FOR RESULTS TESTING
 % Testing - users training samples
 [classificationsTest1, recognitionsTest1, overlapingsTest1, procesingTimesTest1] =  ...
-    preallocateResults(length(usersTest));
+    deal(zeros(length(usersTest), Shared.numSamplesUser));
 % Testing - users validation samples
 [classificationsTest2, recognitionsTest2, overlapingsTest2, procesingTimesTest2] =  ...
-    preallocateResults(length(usersTest));
+    deal(zeros(length(usersTest), Shared.numSamplesUser));
 
 %% EVALUATE EACH USER FOR TESTING
 for i = 1:length(usersTest) 
@@ -109,17 +109,8 @@ dataTest = calculateValidationResults(classificationsTest, recognitionsTest, ...
 
 clear i trainingSamples validationSamples transformedSamplesValidation classificationsTest1 recognitionsTest1 overlapingsTest1 procesingTimesTest1 classificationsTest2 recognitionsTest2 overlapingsTest2 procesingTimesTest2n classificationsTest recognitionsTest overlapingsTest procesingTimesTest
 
-%% FUCTION TO PREALLOCATE SPACE FOR VALIDATION LIBRARY RESULT
-function [clasifications, recognitions, overlapings, procesingTimes] = preallocateResults(numUsers)
-    % Allocate space to save the results
-    clasifications = zeros(numUsers, Shared.numSamplesUser);
-    recognitions = zeros(numUsers, Shared.numSamplesUser);
-    overlapings = zeros(numUsers, Shared.numSamplesUser);
-    procesingTimes = zeros(numUsers, Shared.numSamplesUser);
-end
-
 %% CREAR DATOS DE ESPECTROGRAMAS
-function transformedSamples = transformSamples(samples)
+function transformedSamples = transformSamples(samples)    
     % Get sample keys
     samplesKeys = fieldnames(samples);
     
@@ -154,9 +145,153 @@ function [clasifications, recognitions, overlapings, procesingTimes] = prealloca
     procesingTimes = zeros(numObservations, 1);
 end
 
+%% FUNCTION TO TRANSFORM TOCATEGORICAL
+function yCat = toCategoricalGesture(yPred)
+    gestures = {'fist', 'noGesture', 'open', 'pinch', 'waveIn', 'waveOut'};
+    yCat = categorical(yPred,gestures);
+end
+
+%% FUNCTION TO EVALUATE SAMPLE FRAMES
+function [labels, timestamps, processingTimes] = evaluateSampleFrames(signal, groundTruth, net)
+
+% TODO: programar la logica del durante
+
+    % Fill before frame classification
+    if isequal(Shared.FILLING_TYPE_LSTM, 'before')
+        
+        % Get a nogesture portion of the sample to use as filling
+        if groundTruth
+            noGestureInSignal = signal(~groundTruth, :);
+            filling = noGestureInSignal(1: floor(Shared.FRAME_WINDOW / 2), :);
+        else
+            filling = signal(1: floor(Shared.FRAME_WINDOW / 2), :);
+        end
+        % Combine the sample with the filling
+        signal = [signal; filling];
+        
+    end
+    
+    % Allocate space for the results
+    numWindows = floor((length(signal)-Shared.FRAME_WINDOW) / Shared.WINDOW_STEP_LSTM) + 1;
+    
+    % Preallocate space for the spectrograms
+    labels = cell(1, numWindows);
+    timestamps = zeros(1,numWindows);
+    processingTimes = zeros(1,numWindows);
+    
+    % Reset the network for each sample
+    net = resetState(net);
+    
+    % Creating frames
+    for i = 1:numWindows
+        
+        % Start timer
+        timer = tic;
+        
+        % Get signal data to create a frame
+        traslation = ((i-1)* Shared.WINDOW_STEP_LSTM);
+        inicio = 1 + traslation;
+        finish = Shared.FRAME_WINDOW + traslation;
+        
+        % Calculate timestamp
+        timestamp = inicio + floor(Shared.FRAME_WINDOW / 2);
+        
+        % Get signal of the window
+        frameSignal = signal(inicio:finish, :);
+        frameSignal = Shared.preprocessSignal(frameSignal);
+        
+        % Get Spectrogram of the window (frame)
+        spectrograms = Shared.generateSpectrograms(frameSignal);
+        
+        % Classify the frame
+        [net, predicction, predictedScores] = classifyAndUpdateState(net,spectrograms);
+        
+        % Check if the prediction is over the frame classification threshold
+        if max(predictedScores) < Shared.FRAME_CLASS_THRESHOLD
+            label = 'noGesture';
+        else
+            label = char(predicction);
+        end
+        
+        % Stop timer
+        processingTime = toc(timer);
+        
+        % Save sample results
+        labels{1, i} =  label; 
+        timestamps(1, i) = timestamp; 
+        processingTimes(1, i) = processingTime;
+    end
+end
+
+%% FUNCTION TO CLASSIFY PREDICTIONS
+function class = classifyPredictions(yPred)
+    gestures = {'fist', 'noGesture', 'open', 'pinch', 'waveIn', 'waveOut'};
+    categories = toCategoricalGesture(gestures);
+    
+    % Delete noGestures
+    idxs = cellfun(@(label) ~isequal(label,'noGesture'), yPred);
+    yPred = toCategoricalGesture(yPred(idxs));
+    
+    % Count the number of labels per gesture
+    catCounts = countcats(yPred);
+    [catCounts,indexes] = sort(catCounts,'descend');
+    newCategories = categories(indexes);
+    
+    % Set the class if labels are over the theashold
+    if catCounts(1) >= Shared.MIN_LABELS_SEQUENCE
+       class = newCategories(1);
+    else
+       class = toCategoricalGesture({'noGesture'}); 
+    end
+end
+
+%% FUNCTION TO SET WRONG LABELS TO NOGESTURE
+function labels = postprocessSample(labels, class)
+
+    if ismember(Shared.POSTPROCESS, {'1-1', '2-1', '1-2'})
+        
+        % Set start and finish of postprocess
+        start = 2; finish = length(labels) - 1; % 1-1 by default
+        if isequal(Shared.POSTPROCESS, '2-1')
+            start = 3;
+        elseif isequal(Shared.POSTPROCESS, '1-2')
+            finish = length(labels) - 2;
+        end
+
+        % Check for misclassified labels
+        for i = start:finish
+            
+            % Check left-current-right classes
+            left = isequal(labels{1,i-1}, class);
+            right = isequal(labels{1,i+1}, class);
+            if isequal(Shared.POSTPROCESS, '2-1')
+                left = isequal(labels{1,i-1}, class) || isequal(labels{1,i-2}, class);
+            elseif isequal(Shared.POSTPROCESS, '1-2')
+                right = isequal(labels{1,i+1}, class) || isequal(labels{1,i+2}, class);
+            end
+            current = ~isequal(labels{1,i}, class);
+           
+            % Replace the class if matches the criterium
+            if left && right && current
+                labels{1,i} = class;
+            end
+        end
+        
+    end
+        
+    % Set wrong labels to noGestute
+    for i = 1:length(labels)
+        if ~isequal(labels{1,i}, class)
+            labels{1,i} = 'noGesture';
+        end
+    end
+    
+    % Transform to categorical
+    labels = toCategoricalGesture(labels);
+end
+
 %% FUNCTION TO EVALUETE SAMPLES OF A USER
 function userResults = evaluateSamples(samples, model)
-
 
 % ===== JUST FOR TESTING =====
 data = cell(length(samples), 7);  
@@ -180,7 +315,7 @@ data = cell(length(samples), 7);
         repInfo.gestureName = toCategoricalGesture({gesture});
         
         % Evaluate a sample with slidding window
-        [labels, timestamps, processingTimes] = evaluateSampleFrames(emg, model);
+        [labels, timestamps, processingTimes] = evaluateSampleFrames(emg, groundTruth, model);
 
 % ===== JUST FOR TESTING =====
 firstLabels = labels;
@@ -217,11 +352,11 @@ data{i, 6} = groundTruth;
 timestamps = num2cell(timestamps);
 data{i, 7} = [cellstr(firstLabels); cellstr(labels); timestamps];
 % ===== JUST FOR TESTING =====
-        
-        % Set User Results
+
+      % Set User Results
         userResults = struct('classifications', classifications,  'recognitions', ... 
             recognitions, 'overlapings', overlapings, 'procesingTimes', procesingTimes);
-        
+
 % ===== JUST FOR TESTING =====
 userResults.data = data;  
 % ===== JUST FOR TESTING =====
@@ -337,161 +472,6 @@ function results = calculateValidationResults(classifications, recognitions, ove
         'procesingTime', globalResps.avgProcesingTime);
 end
 
-%% FUNCTION TO SET WRONG LABELS TO NOGESTURE
-function labels = postprocessSample(labels, class)
-
-    if ismember(Shared.POSTPROCESS, {'1-1', '2-1', '1-2'})
-        
-        % Set start and finish of postprocess
-        start = 2; finish = length(labels) - 1; % 1-1 by default
-        if isequal(Shared.POSTPROCESS, '2-1')
-            start = 3;
-        elseif isequal(Shared.POSTPROCESS, '1-2')
-            finish = length(labels) - 2;
-        end
-
-        % Check for misclassified labels
-        for i = start:finish
-            
-            % Check left-current-right classes
-            left = isequal(labels{1,i-1}, class);
-            right = isequal(labels{1,i+1}, class);
-            if isequal(Shared.POSTPROCESS, '2-1')
-                left = isequal(labels{1,i-1}, class) || isequal(labels{1,i-2}, class);
-            elseif isequal(Shared.POSTPROCESS, '1-2')
-                right = isequal(labels{1,i+1}, class) || isequal(labels{1,i+2}, class);
-            end
-            current = ~isequal(labels{1,i}, class);
-           
-            % Replace the class if matches the criterium
-            if left && right && current
-                labels{1,i} = class;
-            end
-            
-            % Replace the class if matches the criterium
-            if ~left && ~right && ~current
-                labels{1,i} = "noGesture";
-            end
-            
-            
-        end
-        
-    end
-        
-    % Set wrong labels to noGestute
-    for i = 1:length(labels)
-        if ~isequal(labels{1,i}, class)
-            labels{1,i} = 'noGesture';
-        end
-    end
-    
-    % Transform to categorical
-    labels = toCategoricalGesture(labels);
-end
-
-%% FUNCTION TO TRANSFORM TOCATEGORICAL
-function yCat = toCategoricalGesture(yPred)
-    gestures = {'fist', 'noGesture', 'open', 'pinch', 'waveIn', 'waveOut'};
-    yCat = categorical(yPred,gestures);
-end
-
-%% FUNCTION TO CLASSIFY PREDICTIONS
-function class = classifyPredictions(yPred)
-    gestures = {'fist', 'noGesture', 'open', 'pinch', 'waveIn', 'waveOut'};
-    categories = toCategoricalGesture(gestures);
-    
-    % Delete noGestures
-    idxs = cellfun(@(label) ~isequal(label,'noGesture'), yPred);
-    yPred = toCategoricalGesture(yPred(idxs));
-    
-    % Count the number of labels per gesture
-    catCounts = countcats(yPred);
-    [catCounts,indexes] = sort(catCounts,'descend');
-    newCategories = categories(indexes);
-    
-    % Set the class if labels are over the theashold
-    if catCounts(1) >= Shared.MIN_LABELS_SEQUENCE
-       class = newCategories(1);
-    else
-       class = toCategoricalGesture({'noGesture'}); 
-    end
-end
-
-%% FUNCTION TO EVALUATE SAMPLE FRAMES
-function [labels, timestamps, processingTimes] = evaluateSampleFrames(signal, model)
-    
-    % Calculate the number of windows
-    numPoints = length(signal);
-    if isequal(Shared.FILLING_TYPE, 'before') || isequal(Shared.FILLING_TYPE, 'during')
-         
-        numWindows = floor((numPoints - (Shared.FRAME_WINDOW / 2)) / Shared.WINDOW_STEP_RECOG) + 1;
-         stepLimit = numPoints - floor(Shared.FRAME_WINDOW / 2) + 1;
-         
-    elseif isequal(Shared.FILLING_TYPE, 'none')
-        
-        numWindows = floor((numPoints - (Shared.FRAME_WINDOW)) / Shared.WINDOW_STEP_RECOG) + 1;
-        stepLimit = numPoints - Shared.FRAME_WINDOW + 1;
-        
-    end
-    
-    % Preallocate space for the spectrograms
-    labels = cell(1, numWindows);
-    timestamps = zeros(1,numWindows);
-    processingTimes = zeros(1,numWindows);
-    
-    % Fill before frame classification
-    if isequal(Shared.FILLING_TYPE, 'before')
-        filling = (2 * Shared.noGestureStd) * rand(Shared.FRAME_WINDOW / 2, Shared.numChannels) ... 
-            + (Shared.noGestureMean - Shared.noGestureStd);
-        signal = [signal; filling];
-    end
-    
-    % Start the frame classification
-    idx = 1; inicio = 1;
-    while inicio <= stepLimit
-        % Start timer
-        timer = tic;
-        
-        finish = inicio + Shared.FRAME_WINDOW - 1;
-        timestamp = inicio + floor((Shared.FRAME_WINDOW - 1) / 2);
-        
-        % Fill during frame classification
-        if isequal(Shared.FILLING_TYPE, 'during') && finish > numPoints
-            
-            extraPoints = finish - numPoints + 1;
-            fill = (2 * Shared.noGestureStd) * rand(extraPoints, Shared.numChannels) ... 
-                + (Shared.noGestureMean - Shared.noGestureStd);
-            frameSignal =  [signal(inicio:numPoints, :); fill];
-            
-        else
-            frameSignal = signal(inicio:finish, :);
-        end
-        
-        frameSignal = Shared.preprocessSignal(frameSignal);
-        spectrograms = Shared.generateSpectrograms(frameSignal);
-        [predicction, predictedScores] = classify(model,spectrograms);
-        
-        % Check if the prediction is over the frame classification threshold
-        if max(predictedScores) < Shared.FRAME_CLASS_THRESHOLD
-            predicction = 'noGesture';
-        else
-            predicction = char(predicction);
-        end
-        
-        % Stop timer
-        processingTime = toc(timer);
-        
-        % Save sample results
-        labels{1, idx} =  predicction;
-        timestamps(1, idx) = timestamp;
-        processingTimes(1, idx) = processingTime;
-        
-        % Slide the window
-        idx = idx + 1;
-        inicio = inicio + Shared.WINDOW_STEP_RECOG;
-    end
-end
-
 %% EXTRA
 %{
     Using "FrameWindow/2" and adding  the other "FrameWindow/2" to the end means that there is not lose of data 
@@ -543,6 +523,3 @@ calculateValidationResults
             recognitions, 'overlapings', overlapings, 'procesingTimes', procesingTimes);
     % ===== JUST FOR TESTING =====
 %}
-
-
-    

@@ -324,21 +324,24 @@ function saveSampleInDatastore(samples, user, type, dataStore)
 end
 
 %% FUNCTION O GENERATE NO GESTURE FRAMES
-function data = generateFramesNoGesture(signal, numWindows)
+function data = generateFramesNoGesture(signal, requestedWindows)
 
-    % Fill before frame classification
-    if isequal(Shared.FILLING_TYPE_LSTM, 'before')
-        % Get a nogesture portion of the sample to use as filling
-        filling = signal(1: floor(Shared.FRAME_WINDOW / 2), :);
+    % Calculate the number of windows to apply the signal
+    numWindows = floor((length(signal)-Shared.FRAME_WINDOW) / Shared.WINDOW_STEP_LSTM) + 1;
+    % Calculate if signal needs filling
+    numWindowsFill = requiredWindows - numWindows;
+    if numWindowsFill > 0
+        filling = signal(1:numWindowsFill*Shared.WINDOW_STEP_LSTM , :);
+        % Fill before frame classification
         signal = [signal; filling];
     end
-
+    
     % Allocate space for the results
-    data = cell(numWindows, 3);
+    data = cell(requestedWindows, 3);
     data(:,2) = {'noGesture'};
       
     % For each window
-    for i = 1:numWindows
+    for i = 1:requestedWindows
         % Get window information
         % TODO: (Opcional) Añadir un desplazamiento en el relleno por si comienza irregular
         traslation = ((i-1) * Shared.WINDOW_STEP_LSTM);

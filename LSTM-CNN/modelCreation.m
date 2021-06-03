@@ -75,9 +75,9 @@ clear options lgraph
 
 %% ACCURACY FOR EACH DATASET
 % The accuracy for training-validation-tests is obtained
-accTraining = calculateAccuracy(net, trainingDatastore);
-accValidation = calculateAccuracy(net, validationDatastore);
-accTesting = calculateAccuracy(net, testingDatastore);
+[accTraining, flattenLabelsTraining ] = calculateAccuracy(net, trainingDatastore);
+[accValidation, flattenLabelsValidation ] = calculateAccuracy(net, validationDatastore);
+[accTesting, flattenLabelsTesting ] = calculateAccuracy(net, testingDatastore);
 
 
 % The amount of training-validation-tests data is printed
@@ -90,15 +90,15 @@ fprintf('\n%s\n%s\n%s\n', strAccTraining, strAccValidation, strAccTesting);
 clear accTraining accValidation accTesting strAccTraining strAccValidation strAccTesting
 
 %% CONFUSION MATRIX FOR EACH DATASET
-calculateConfusionMatrix(net, trainingDatastore, 'training', withNoGesture);
-calculateConfusionMatrix(net, validationDatastore, 'validation', withNoGesture);
-calculateConfusionMatrix(net, testingDatastore, 'testing', withNoGesture);
+calculateConfusionMatrix(flattenLabelsTraining, 'training');
+calculateConfusionMatrix(flattenLabelsValidation, 'validation');
+calculateConfusionMatrix(flattenLabelsTesting, 'testing');
 
 %% SAVE MODEL
-if ~exist("models", 'dir')
-   mkdir("models");
+if ~exist("ModelsLSTM", 'dir')
+   mkdir("ModelsLSTM");
 end
-save(['models/model_', datestr(now,'dd-mm-yyyy_HH-MM-ss')], 'net');
+save(['ModelsLSTM/model_', datestr(now,'dd-mm-yyyy_HH-MM-ss')], 'net');
 
 %% FUNCTION TO STABLISH THE NEURAL NETWORK ARCHITECTURE
 function lgraph = setNeuralNetworkArchitecture(inputSize, numClasses)
@@ -339,21 +339,60 @@ function lgraph = setNeuralNetworkArchitecture(inputSize, numClasses)
 end
 
 %% FUNCTION TO CALCULATE ACCURACY OF A DATASTORE
-function accuracy = calculateAccuracy(net, datastore)
-    YPred = classify(net,datastore);
-    YValidation = datastore.Labels;
+function [accuracy, flattenLabels] = calculateAccuracy(net, datastore)
+    % Configure options
+    realVsPredData = cell(datastore.NumObservations, 2);
+    datastore.MiniBatchSize = 1; % No padding
+
+    totalLabels = 0;
+    while hasdata(datastore)
+        % Get sample
+        position = datastore.CurrentFileIndex;
+        data = read(datastore);
+        labels = data.labelsSequences;
+        sequence = data.sequences;
+        % Cassify sample
+        labelsPred = classify(net,sequence);
+        % Save labels to flatten later and calculate accuracy
+        realVsPredData(position, :) = [labels, labelsPred];
+        totalLabels = totalLabels + length(labels{1,1});
+    end
+    
+    % Allocate space for flatten labels
+    flattenLabels = cell(totalLabels,1);
+    idx = 0;
+    % Flat labels
+    for i = 1:length(realVsPredData)
+        labels = realVsPredData{i, 1};
+        labelsPred = realVsPredData{i, 2};
+        for j = 1:length(labels)
+            flattenLabels{idx+j, 1} = labels(1,j);
+            flattenLabels{idx+j, 2} = labelsPred(1, j);
+        end
+        idx = idx + length(labels);
+    end
+    
+    % Count labels that match with its prediction
+    matches = 0;
+    for i = 1:length(flattenLabels)
+        if isequal(flattenLabels{i, 1}, flattenLabels{i, 2})
+            matches = matches + 1;
+        end
+    end
+
     % Calculate accuracy
-    accuracy = sum(YPred == YValidation)/numel(YValidation);
+    accuracy = matches / length(flattenLabels);
+    reset(datastore);
 end
 
 %% FUNCTION TO CALCULATE AD PLOT A CONFUSION MATRIX
-function calculateConfusionMatrix(net, datastore, datasetName, withNoGesture)
-    % Get predictions of each frame
-    predLabels = classify(net, datastore);
-    realLabels = datastore.Labels;
-    
+function calculateConfusionMatrix(flattenLabels, datasetName)
     % Stablish clases
-    classes = categorical(Shared.setNoGestureUse(withNoGesture));
+    classes = categorical(Shared.setNoGestureUse(true));
+
+    % Transform labels into categorical
+    realLabels = categorical(flattenLabels(:,1), Shared.setNoGestureUse(true));
+    predLabels = categorical(flattenLabels(:,2), Shared.setNoGestureUse(true));
     
     % Create the confusion matrix
     confusionMatrix = confusionmat(realLabels, predLabels, 'Order', classes);
