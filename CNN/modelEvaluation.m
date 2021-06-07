@@ -425,7 +425,7 @@ function [labels, timestamps, processingTimes] = evaluateSampleFrames(signal, mo
     if isequal(Shared.FILLING_TYPE, 'before') || isequal(Shared.FILLING_TYPE, 'during')
          
         numWindows = floor((numPoints - (Shared.FRAME_WINDOW / 2)) / Shared.WINDOW_STEP_RECOG) + 1;
-         stepLimit = numPoints - floor(Shared.FRAME_WINDOW / 2) + 1;
+        stepLimit = numPoints - floor(Shared.FRAME_WINDOW / 2) + 1;
          
     elseif isequal(Shared.FILLING_TYPE, 'none')
         

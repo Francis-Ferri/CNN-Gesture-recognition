@@ -86,7 +86,7 @@ for i = 1:length(datastores) % parfor
             numFramesSamples(j, 1) = length(frames);
         end
         % Save the mean of frames for all samples
-        noGestureFramesPerSample{i,1} = floor(mean(numFramesSamples));
+        noGestureFramesPerSample{i,1} = round(mean(numFramesSamples));
         
     elseif isequal(Shared.NOGESTURE_FILL, 'some')
         
@@ -112,7 +112,7 @@ for i = 1:length(datastores) % parfor
             end
             
             % Calculate the mena number of frames for the class
-            avgNumFramesClass(j, 1) = floor(mean(numFramesSamples));
+            avgNumFramesClass(j, 1) = round(mean(numFramesSamples));
             
         end
         
@@ -293,9 +293,6 @@ end
 
 %% FUNCTION TO SAVE SPECTROGRAMS IN DATASTORE
 function saveSampleInDatastore(samples, user, type, dataStore)
-
-
-    %TODO: ARREGLAR LO DE LOS NOMBRES
     % For each sample
     for i = 1:length(samples)
         
@@ -327,10 +324,12 @@ end
 function data = generateFramesNoGesture(signal, requestedWindows)
 
     % Calculate the number of windows to apply the signal
-    numWindows = floor((length(signal)-Shared.FRAME_WINDOW) / Shared.WINDOW_STEP_LSTM) + 1;
+    numWindows = floor((length(signal) - Shared.FRAME_WINDOW) / Shared.WINDOW_STEP_LSTM) + 1;
+    
     % Calculate if signal needs filling
-    numWindowsFill = requiredWindows - numWindows;
+    numWindowsFill = requestedWindows - numWindows;
     if numWindowsFill > 0
+        % Get a nogesture portion of the sample to use as filling
         filling = signal(1:numWindowsFill*Shared.WINDOW_STEP_LSTM , :);
         % Fill before frame classification
         signal = [signal; filling];

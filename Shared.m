@@ -14,7 +14,7 @@ classdef Shared
         FRAME_WINDOW = 300;
         WINDOW_STEP = 15;
         TOLERANCE_WINDOW = 0.75;
-        TOLERNCE_GESTURE = 0.9;
+        TOLERNCE_GESTURE = 0.5; %0.9 si vas a usar esta que el stride sea bastante alto
         
         % Recognition
         WINDOW_STEP_RECOG = 15;
@@ -24,7 +24,7 @@ classdef Shared
         POSTPROCESS = '1-1';
         
         % For LSTM
-        NOGESTURE_FILL = 'some' % some all
+        NOGESTURE_FILL = 'all' % some all
         NOGESTURE_IN_SEQUENCE = 3;
         WINDOW_STEP_LSTM = 15;
         FILLING_TYPE_LSTM = 'before'; % before none
