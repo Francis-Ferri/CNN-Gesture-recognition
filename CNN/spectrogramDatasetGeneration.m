@@ -1,10 +1,10 @@
 %{
-
+    CNN
 %}
 
 %% DEFINE THE DIRECTORIES WHERE THE DATA WILL BE FOUND
-dataDir = 'EMG_EPN612_Dataset'; %'CEPRA_2019_13_DATASET_FINAL'
-trainingDir = 'trainingJSON'; %'training'
+dataDir = 'EMG_EPN612_Dataset';
+trainingDir = 'trainingJSON';
 
 %% GET THE USERS DIRECTORIES
 [users, trainingPath] = Shared.getUsers(dataDir, trainingDir);

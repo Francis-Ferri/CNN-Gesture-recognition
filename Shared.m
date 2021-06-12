@@ -1,5 +1,5 @@
 %{
-    
+    GENERAL CONFIGURATIONS
 %}
 
 classdef Shared
@@ -12,9 +12,9 @@ classdef Shared
         
         % Frame
         FRAME_WINDOW = 300;
-        WINDOW_STEP = 15;
+        WINDOW_STEP = 15; % To obtain the frames
         TOLERANCE_WINDOW = 0.75;
-        TOLERNCE_GESTURE = 0.5; %0.9 si vas a usar esta que el stride sea bastante alto
+        TOLERNCE_GESTURE = 0.5; % 0.75 0.25; 
         
         % Recognition
         WINDOW_STEP_RECOG = 15;
@@ -24,12 +24,12 @@ classdef Shared
         POSTPROCESS = '1-1';
         
         % For LSTM
+        FILLING_TYPE_LSTM = 'before'; % before none
         NOGESTURE_FILL = 'all' % some all
         NOGESTURE_IN_SEQUENCE = 3;
         WINDOW_STEP_LSTM = 15;
-        FILLING_TYPE_LSTM = 'before'; % before none
-        SEQUENCE_INIT = 'noGesture'; % noGesture zeros
-        CONSIDER_PREVIOUS = true
+        PAD_KIND = 'shortest'; % shortest longest
+        TOLERNCE_GESTURE_LSTM = 0.5; % 0.75 0.25;
         
         % Samples and signals
         numSamplesUser = 150;
@@ -166,5 +166,11 @@ classdef Shared
         end
         
     end
-    
+
 end
+
+%% EXTRA
+%{
+    % CONSIDER_PREVIOUS = true % true false
+    %SEQUENCE_INIT = 'noGesture'; % zeros noGesture 
+%}

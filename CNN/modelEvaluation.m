@@ -1,10 +1,10 @@
 %{
-
+    CNN
 %}
 
 %% DEFINE THE DIRECTORIES WHERE THE DATA WILL BE FOUND
-dataDir = 'EMG_EPN612_Dataset'; %'CEPRA_2019_13_DATASET_FINAL'
-trainingDir = 'trainingJSON'; %'training'
+dataDir = 'EMG_EPN612_Dataset';
+trainingDir = 'trainingJSON';
 
 %% GET THE USERS DIRECTORIES
 [users, trainingPath] = Shared.getUsers(dataDir, trainingDir);
@@ -87,14 +87,18 @@ for i = 1:length(usersTest)
     userResults = evaluateSamples(transformedSamplesTraining, model);
     
     % Set user's training results
-    classificationsTest1(i, :) = userResults.classifications; recognitionsTest1(i, :) = userResults.recognitions; overlapingsTest1(i, :) = userResults.overlapings; procesingTimesTest1(i, :) = userResults.procesingTimes;
+    [classificationsTest1(i, :), recognitionsTest1(i, :), overlapingsTest1(i, :) ... 
+        , procesingTimesTest1(i, :)] = deal(userResults.classifications, ... 
+        userResults.recognitions, userResults.overlapings, userResults.procesingTimes);
     
     % Validation data
     transformedSamplesValidation = transformSamples(validationSamples);
     userResults = evaluateSamples(transformedSamplesValidation, model);
     
     % Set user's training results
-    classificationsTest2(i, :) = userResults.classifications; recognitionsTest2(i, :) = userResults.recognitions; overlapingsTest2(i, :) = userResults.overlapings; procesingTimesTest2(i, :) = userResults.procesingTimes;
+    [classificationsTest2(i, :), recognitionsTest2(i, :), overlapingsTest2(i, :), ... 
+        procesingTimesTest2(i, :)] = deal(userResults.classifications, ... 
+        userResults.recognitions, userResults.overlapings, userResults.procesingTimes);
 end
 
 % Combine testing part (training and validation samples)

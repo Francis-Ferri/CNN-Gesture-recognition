@@ -79,7 +79,6 @@ clear options lgraph
 [accValidation, flattenLabelsValidation ] = calculateAccuracy(net, validationDatastore);
 [accTesting, flattenLabelsTesting ] = calculateAccuracy(net, testingDatastore);
 
-
 % The amount of training-validation-tests data is printed
 strAccTraining = ['Training accuracy: ', num2str(accTraining)];
 strAccValidation = ['Validation accuracy: ', num2str(accValidation)];
@@ -344,6 +343,7 @@ function [accuracy, flattenLabels] = calculateAccuracy(net, datastore)
     realVsPredData = cell(datastore.NumObservations, 2);
     datastore.MiniBatchSize = 1; % No padding
 
+    % Read while the datastore has data
     totalLabels = 0;
     while hasdata(datastore)
         % Get sample
@@ -359,15 +359,15 @@ function [accuracy, flattenLabels] = calculateAccuracy(net, datastore)
     end
     
     % Allocate space for flatten labels
-    flattenLabels = cell(totalLabels,1);
+    flattenLabels = cell(totalLabels,2);
     idx = 0;
     % Flat labels
     for i = 1:length(realVsPredData)
         labels = realVsPredData{i, 1};
         labelsPred = realVsPredData{i, 2};
         for j = 1:length(labels)
-            flattenLabels{idx+j, 1} = labels(1,j);
-            flattenLabels{idx+j, 2} = labelsPred(1, j);
+            flattenLabels{idx+j, 1} = char(labels(1,j));
+            flattenLabels{idx+j, 2} = char(labelsPred(1, j));
         end
         idx = idx + length(labels);
     end

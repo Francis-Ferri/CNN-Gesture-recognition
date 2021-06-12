@@ -3,8 +3,8 @@
 %}
 
 %% DEFINE THE DIRECTORIES WHERE THE DATA WILL BE FOUND
-dataDir = 'EMG_EPN612_Dataset'; %'CEPRA_2019_13_DATASET_FINAL'
-trainingDir = 'trainingJSON'; %'training'
+dataDir = 'EMG_EPN612_Dataset';
+trainingDir = 'trainingJSON';
 
 %% GET THE USERS DIRECTORIES
 [users, trainingPath] = Shared.getUsers(dataDir, trainingDir);
@@ -34,7 +34,7 @@ clear modelFile modelFileName
     deal(zeros(length(usersTrainVal), Shared.numSamplesUser));
 
 %% EVALUATE EACH USER FOR TRAINING AND VALIDATION
-for i = 1:1 %length(usersTrainVal) % % parfor
+for i = 1:length(usersTrainVal) % parfor
     % Get user samples
     [trainingSamples, validationSamples] = Shared.getTrainingTestingSamples(trainingPath, usersTrainVal(i));
     
@@ -225,12 +225,11 @@ end
 
 %% FUNCTION TO CLASSIFY PREDICTIONS
 function class = classifyPredictions(yPred)
-    gestures = {'fist', 'noGesture', 'open', 'pinch', 'waveIn', 'waveOut'};
-    categories = toCategoricalGesture(gestures);
+    categories = Shared.setNoGestureUse(true); % Provemos a quitar el categorical
     
     % Delete noGestures
     idxs = cellfun(@(label) ~isequal(label,'noGesture'), yPred);
-    yPred = toCategoricalGesture(yPred(idxs));
+    yPred = categorical(yPred(idxs),Shared.setNoGestureUse(true));
     
     % Count the number of labels per gesture
     catCounts = countcats(yPred);
@@ -292,10 +291,6 @@ end
 
 %% FUNCTION TO EVALUETE SAMPLES OF A USER
 function userResults = evaluateSamples(samples, model)
-
-% ===== JUST FOR TESTING =====
-data = cell(length(samples), 7);  
-% ===== JUST FOR TESTING =====
     
     % Preallocate space for results
     [classifications, recognitions, overlapings, procesingTimes] = preallocateUserResults(length(samples));
@@ -316,11 +311,7 @@ data = cell(length(samples), 7);
         
         % Evaluate a sample with slidding window
         [labels, timestamps, processingTimes] = evaluateSampleFrames(emg, groundTruth, model);
-
-% ===== JUST FOR TESTING =====
-firstLabels = labels;
-% ===== JUST FOR TESTING =====
-
+        
         % Set a class for the sample
         class = classifyPredictions(labels);
         
@@ -341,25 +332,10 @@ firstLabels = labels;
             overlapings(i) = result.overlappingFactor;
         end
         procesingTimes(i) = mean(processingTimes); %time (frame)
-        
-% ===== JUST FOR TESTING =====
-data{i, 1} = result.classResult;
-data{i, 2} = result.recogResult;
-data{i, 3} = result.overlappingFactor;
-data{i, 4} = gesture;
-data{i, 5} = char(class);
-data{i, 6} = groundTruth;
-timestamps = num2cell(timestamps);
-data{i, 7} = [cellstr(firstLabels); cellstr(labels); timestamps];
-% ===== JUST FOR TESTING =====
 
-      % Set User Results
+        % Set User Results
         userResults = struct('classifications', classifications,  'recognitions', ... 
             recognitions, 'overlapings', overlapings, 'procesingTimes', procesingTimes);
-
-% ===== JUST FOR TESTING =====
-userResults.data = data;  
-% ===== JUST FOR TESTING =====
     end
 end
 

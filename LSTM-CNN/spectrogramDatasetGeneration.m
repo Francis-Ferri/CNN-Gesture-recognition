@@ -3,8 +3,8 @@
 %}
 
 %% DEFINE THE DIRECTORIES WHERE THE DATA WILL BE FOUND
-dataDir = 'EMG_EPN612_Dataset'; %'CEPRA_2019_13_DATASET_FINAL'
-trainingDir = 'trainingJSON'; %'training'
+dataDir = 'EMG_EPN612_Dataset';
+trainingDir = 'trainingJSON';
 
 %% GET THE USERS DIRECTORIES
 [users, trainingPath] = Shared.getUsers(dataDir, trainingDir);
@@ -43,7 +43,7 @@ for i = 1:length(usersSets)
         [datastore1, datastore2] = deal(testingDatastore, testingDatastore);
     end
     
-    for j = 1:length(users) %parfor
+    parfor j = 1:length(users)
         % Get user samples
         [trainingSamples, validationSamples] = Shared.getTrainingTestingSamples(trainingPath, users(j));
         
@@ -68,7 +68,7 @@ noGestureFramesPerSample = cell(length(datastores), 1);
 clear trainingSamples transformedSamplesTraining trainingDatastore validationDatastore testingDatastore
 
 %% CALCULATE THE NUMBER OF FRAMES IN A SEQUENCE FOR EACH DATASTORE
-for i = 1:length(datastores) % parfor
+parfor i = 1:length(datastores)
     
     % Create a file datastore.
     fds = fileDatastore(datastores{i,1}, ...
@@ -150,7 +150,7 @@ for i = 1:length(usersSets)
             noGestureTesting, testingDatastore, testingDatastore);
     end
     
-    for j = 1:length(users) % parfor
+    parfor j = 1:length(users)
         % Get user samples
         [trainingSamples, validationSamples] = Shared.getTrainingTestingSamples(trainingPath, users(j));
 
@@ -223,7 +223,7 @@ function [data, groundTruth] = generateFrames(signal, groundTruth, numGesturePoi
         
         % Check the thresahold to consider gesture
         if totalOnes >= Shared.FRAME_WINDOW * Shared.TOLERANCE_WINDOW || ...
-                totalOnes >= numGesturePoints * Shared.TOLERNCE_GESTURE
+                totalOnes >= numGesturePoints * Shared.TOLERNCE_GESTURE_LSTM
             isIncluded(i,1) = true;
             data{i,2} = gestureName;
         end

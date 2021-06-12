@@ -1,5 +1,5 @@
 %{
-
+    CNN
 %}
 
 %% SET DATASTORES PATHS
@@ -78,7 +78,6 @@ clear options lgraph
 accTraining = calculateAccuracy(net, trainingDatastore);
 accValidation = calculateAccuracy(net, validationDatastore);
 accTesting = calculateAccuracy(net, testingDatastore);
-
 
 % The amount of training-validation-tests data is printed
 strAccTraining = ['Training accuracy: ', num2str(accTraining)];
@@ -361,133 +360,81 @@ end
 
     %% DIVIDE DATASTORE
 
-%% FUNCTION TO DIVIDE DATASTORE IN TWO HALVES
-function [firstDatstore, secondDatastore] = divideDatastore(dataStore, percentage)
-    % First datstore(percentage%) && second datastore(1 - percentage%)
-    [firstDatstore, secondDatastore] =  partition(dataStore, percentage);
-end
+    %% FUNCTION TO DIVIDE DATASTORE IN TWO HALVES
+    function [firstDatstore, secondDatastore] = divideDatastore(dataStore, percentage)
+        % First datstore(percentage%) && second datastore(1 - percentage%)
+        [firstDatstore, secondDatastore] =  partition(dataStore, percentage);
+    end
 
 
-    %% TSNE
+        %% TSNE
 
-%% ANALIZE CHARACTERISTIC EXTRACTOR USING T-SNE
-% Inputs: datastore, net, layer, numSamples, numPCAComponents, perplexity
-tsneAnalisis(trainingDatastore, net, 'depthcat_1', 50, 50, 20); % data % [data, acts]
+    %% ANALIZE CHARACTERISTIC EXTRACTOR USING T-SNE
+    % Inputs: datastore, net, layer, numSamples, numPCAComponents, perplexity
+    tsneAnalisis(trainingDatastore, net, 'depthcat_1', 50, 50, 20); % data % [data, acts]
 
-%% FUNCTION TO PLOT T-SNE IN 2D
-function tsne2D(acts, cats, numPCAComponents, perplexity)
-    newPoints = tsne(acts, 'NumPCAComponents', numPCAComponents, 'Perplexity', perplexity);
-    figure
-    gscatter(newPoints(:,1),newPoints(:,2),cats);
-end
+    %% FUNCTION TO PLOT T-SNE IN 2D
+    function tsne2D(acts, cats, numPCAComponents, perplexity)
+        newPoints = tsne(acts, 'NumPCAComponents', numPCAComponents, 'Perplexity', perplexity);
+        figure
+        gscatter(newPoints(:,1),newPoints(:,2),cats);
+    end
 
-%% FUNCTION TO PLOT T-SNE IN 3D
-function tsne3D(acts, cats, numPCAComponents, perplexity)
-    newPoints3D = tsne(acts,'Algorithm','barneshut', 'NumPCAComponents', numPCAComponents, ...
-        'NumDimensions',3, 'Perplexity', perplexity);
-    figure;
-    scatter3(newPoints3D(:,1),newPoints3D(:,2),newPoints3D(:,3),15,cats,'filled');
-    view(-93,14);
-end
+    %% FUNCTION TO PLOT T-SNE IN 3D
+    function tsne3D(acts, cats, numPCAComponents, perplexity)
+        newPoints3D = tsne(acts,'Algorithm','barneshut', 'NumPCAComponents', numPCAComponents, ...
+            'NumDimensions',3, 'Perplexity', perplexity);
+        figure;
+        scatter3(newPoints3D(:,1),newPoints3D(:,2),newPoints3D(:,3),15,cats,'filled');
+        view(-93,14);
+    end
 
-%% FUNCTION TO PLOT T-SNE IN 2D WITH DIFERENT DISTANCES
-function tsneDistancesEval(acts, cats, numPCAComponents, perplexity)
-    figure;
-    % Cosine
-    Y = tsne(acts,'Algorithm','exact','Distance','cosine', ...
-        'NumPCAComponents', numPCAComponents, 'Perplexity', perplexity);
-    subplot(1,3,1);
-    gscatter(Y(:,1),Y(:,2),cats);
-    title('Cosine');
-    % Chebychev
-    Y = tsne(acts,'Algorithm','exact','Distance','chebychev', ...
-        'NumPCAComponents', numPCAComponents, 'Perplexity', perplexity);
-    subplot(1,3,2)
-    gscatter(Y(:,1),Y(:,2),cats)
-    title('Chebychev')
-    % Euclidean
-    Y = tsne(acts,'Algorithm','exact','Distance','euclidean', ... 
-        'NumPCAComponents', numPCAComponents, 'Perplexity', perplexity);
-    subplot(1,3,3)
-    gscatter(Y(:,1),Y(:,2),cats)
-    title('Euclidean')
-end
+    %% FUNCTION TO PLOT T-SNE IN 2D WITH DIFERENT DISTANCES
+    function tsneDistancesEval(acts, cats, numPCAComponents, perplexity)
+        figure;
+        % Cosine
+        Y = tsne(acts,'Algorithm','exact','Distance','cosine', ...
+            'NumPCAComponents', numPCAComponents, 'Perplexity', perplexity);
+        subplot(1,3,1);
+        gscatter(Y(:,1),Y(:,2),cats);
+        title('Cosine');
+        % Chebychev
+        Y = tsne(acts,'Algorithm','exact','Distance','chebychev', ...
+            'NumPCAComponents', numPCAComponents, 'Perplexity', perplexity);
+        subplot(1,3,2)
+        gscatter(Y(:,1),Y(:,2),cats)
+        title('Chebychev')
+        % Euclidean
+        Y = tsne(acts,'Algorithm','exact','Distance','euclidean', ... 
+            'NumPCAComponents', numPCAComponents, 'Perplexity', perplexity);
+        subplot(1,3,3)
+        gscatter(Y(:,1),Y(:,2),cats)
+        title('Euclidean')
+    end
 
-%% FUNCTION TO EVLUATE A DATASTORE SAMPLE USING T-SNE
-function [data, acts] = tsneAnalisis(datastore, net, layer, numSamples, numPCAComponents, perplexity)
-    rng default % for reproducibility
-    % Get samples
-    originalMinibatch = datastore.MiniBatchSize;
-    reset(datastore);
-    datastore.MiniBatchSize = numSamples;
-    data = read(datastore);
-    % Get labels
-    labels = cellfun(@(label) label, data.responses);
-    % Get activations from layer
-    acts = activations(net, data, layer);
-    % Reshape the activations
-    actDims = size(acts);
-    acts = reshape(acts, actDims(4), prod(actDims(1:3)));
-    % Make t-sne analysis
-    tsne2D(acts, labels, numPCAComponents, perplexity);
-    tsne3D(acts, labels, numPCAComponents, perplexity);
-    tsneDistancesEval(acts, labels, numPCAComponents, perplexity);
-    % Reset the dataset
-    datastore.MiniBatchSize = originalMinibatch;
-    reset(datastore);
-end
-
-    %%NETWORK
-
-% Create layer graph
-lgraph = layerGraph();
-% Add layer branches
-tempLayers = imageInputLayer(inputSize,"Name","data");
-lgraph = addLayers(lgraph,tempLayers);
-
-tempLayers = [
-    convolution2dLayer([1 1],16,"Name","Inception_1a-3x3_reduce")
-    reluLayer("Name","Inception_1a-3x3_relu_reduce")
-    convolution2dLayer([3 3],18,"Name","Inception_1a-3x3","Padding",[1 1 1 1])
-    reluLayer("Name","Inception_1a-3x3_relu")];
-lgraph = addLayers(lgraph,tempLayers);
-
-tempLayers = [
-    maxPooling2dLayer([3 3],"Name","Inception_1a-pool","Padding",[1 1 1 1])
-    convolution2dLayer([1 1],18,"Name","Inception_1a-pool_proj")
-    reluLayer("Name","Inception_1a-relu-pool_proj")];
-lgraph = addLayers(lgraph,tempLayers);
-
-tempLayers = [
-    convolution2dLayer([1 1],18,"Name","Inception_1a-1x1")
-    reluLayer("Name","Inception_1a-1x1_relu")];
-lgraph = addLayers(lgraph,tempLayers);
-
-tempLayers = [
-    convolution2dLayer([1 1],16,"Name","Inception_1a-5x5_reduce")
-    reluLayer("Name","Inception_2a-5x5_relu_reduce_2")
-    convolution2dLayer([5 5],18,"Name","Inception_1a-5x5","Padding",[2 2 2 2])
-    reluLayer("Name","Inception_1a-5x5_relu")];
-lgraph = addLayers(lgraph,tempLayers);
-
-tempLayers = [
-    depthConcatenationLayer(4,"Name","depthcat_1")
-    crossChannelNormalizationLayer(5,"Name","crossnorm_4")
-    dropoutLayer(0.5,"Name","dropout")
-    fullyConnectedLayer(numClasses,"Name","fc_1")
-    softmaxLayer("Name","softmax")
-    classificationLayer("Name","classoutput")];
-lgraph = addLayers(lgraph,tempLayers);
-% clean up helper variable
-lgraph = connectLayers(lgraph,"data","Inception_1a-3x3_reduce");
-lgraph = connectLayers(lgraph,"data","Inception_1a-pool");
-lgraph = connectLayers(lgraph,"data","Inception_1a-1x1");
-lgraph = connectLayers(lgraph,"data","Inception_1a-5x5_reduce");
-lgraph = connectLayers(lgraph,"Inception_1a-relu-pool_proj","depthcat_1/in4");
-lgraph = connectLayers(lgraph,"Inception_1a-1x1_relu","depthcat_1/in1");
-lgraph = connectLayers(lgraph,"Inception_1a-3x3_relu","depthcat_1/in2");
-lgraph = connectLayers(lgraph,"Inception_1a-5x5_relu","depthcat_1/in3");
-
+    %% FUNCTION TO EVLUATE A DATASTORE SAMPLE USING T-SNE
+    function [data, acts] = tsneAnalisis(datastore, net, layer, numSamples, numPCAComponents, perplexity)
+        rng default % for reproducibility
+        % Get samples
+        originalMinibatch = datastore.MiniBatchSize;
+        reset(datastore);
+        datastore.MiniBatchSize = numSamples;
+        data = read(datastore);
+        % Get labels
+        labels = cellfun(@(label) label, data.responses);
+        % Get activations from layer
+        acts = activations(net, data, layer);
+        % Reshape the activations
+        actDims = size(acts);
+        acts = reshape(acts, actDims(4), prod(actDims(1:3)));
+        % Make t-sne analysis
+        tsne2D(acts, labels, numPCAComponents, perplexity);
+        tsne3D(acts, labels, numPCAComponents, perplexity);
+        tsneDistancesEval(acts, labels, numPCAComponents, perplexity);
+        % Reset the dataset
+        datastore.MiniBatchSize = originalMinibatch;
+        reset(datastore);
+    end
 
 %}
 
