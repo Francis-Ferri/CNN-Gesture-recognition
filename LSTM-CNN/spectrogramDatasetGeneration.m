@@ -3,7 +3,7 @@
 %}
 
 %% DEFINE THE DIRECTORIES WHERE THE DATA WILL BE FOUND
-dataDir = 'EMG_EPN612_Dataset';
+dataDir = 'EMG-EPN612 Dataset';
 trainingDir = 'trainingJSON';
 
 %% GET THE USERS DIRECTORIES
@@ -15,9 +15,10 @@ usersTest = users(limit+1:length(users), 1);
 % Clean up variables
 clear dataDir trainingDir users numTestUsers limit
 
-%%                      BORRAR ESTO AL ACABAR SOLO ES PARA HACER PRUEBAS CON PORCIONES
-usersTrainVal = usersTrainVal(1:1);
-usersTest = usersTest(1:1);
+%% ===== JUST FOR TESTING =====
+%usersTrainVal = usersTrainVal(1:1);
+%usersTest = usersTest(1:1);
+%  ===== JUST FOR TESTING =====
 
 %% THE STRUCTURE OF THE DATASTORE IS DEFINED
 categories = {'fist'; 'open'; 'pinch'; 'waveIn'; 'waveOut'};

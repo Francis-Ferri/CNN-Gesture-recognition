@@ -37,7 +37,7 @@ classdef SpectrogramDatastoreLSTM < matlab.io.Datastore & ...
             ds.NumClasses = length(Shared.setNoGestureUse(true));
             
             % Initialize datastore properties
-            ds.MiniBatchSize = 32;
+            ds.MiniBatchSize = 64;
             ds.NumObservations = numObservations;
             ds.CurrentFileIndex = 1;
 

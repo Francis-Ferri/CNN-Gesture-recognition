@@ -3,7 +3,7 @@
 %}
 
 %% DEFINE THE DIRECTORIES WHERE THE DATA WILL BE FOUND
-dataDir = 'EMG_EPN612_Dataset';
+dataDir = 'EMG-EPN612 Dataset';
 trainingDir = 'trainingJSON';
 
 %% GET THE USERS DIRECTORIES
@@ -14,12 +14,13 @@ usersTrainVal = users(1:limit, 1);
 usersTest = users(limit+1:length(users), 1);
 clear dataDir trainingDir users numTestUsers limit
 
-%%                      BORRAR ESTO AL ACABAR SOLO ES PARA HACER PRUEBAS CON PORCIONES
-usersTrainVal = usersTrainVal(1:2);
-usersTest = usersTest(1:2);
+%% ===== JUST FOR TESTING =====
+%usersTrainVal = usersTrainVal(1:2);
+%usersTest = usersTest(1:2);
+%  ===== JUST FOR TESTING =====
 
 %% LOAD THE MODEL
-modelFile = 'model_01-06-2021_11-10-52';
+modelFile = 'model_01-06-2021_11-10-52'; % You have to replace it with a file
 modelFileName = fullfile('ModelsLSTM', modelFile);
 model = load(modelFileName).net;
 clear modelFile modelFileName
@@ -34,7 +35,7 @@ clear modelFile modelFileName
     deal(zeros(length(usersTrainVal), Shared.numSamplesUser));
 
 %% EVALUATE EACH USER FOR TRAINING AND VALIDATION
-for i = 1:length(usersTrainVal) % parfor
+parfor i = 1:length(usersTrainVal) % parfor
     % Get user samples
     [trainingSamples, validationSamples] = Shared.getTrainingTestingSamples(trainingPath, usersTrainVal(i));
     
@@ -52,8 +53,8 @@ for i = 1:length(usersTrainVal) % parfor
     userResults = evaluateSamples(transformedSamplesValidation, model);
     
     % Set user's training results
-    [classificationsVal(i, :), recognitionsVal(i, :), overlapingsVal(i, :), procesingTimesVal(i, :)] = ... 
-        deal(userResults.classifications, userResults.recognitions, ... 
+    [classificationsVal(i, :), recognitionsVal(i, :), overlapingsVal(i, :), .... 
+        procesingTimesVal(i, :)] = deal(userResults.classifications, userResults.recognitions, ... 
         userResults.overlapings, userResults.procesingTimes);
 end
 
@@ -78,7 +79,7 @@ clear i trainingSamples validationSamples transformedSamplesValidation classific
     deal(zeros(length(usersTest), Shared.numSamplesUser));
 
 %% EVALUATE EACH USER FOR TESTING
-for i = 1:length(usersTest) 
+parfor i = 1:length(usersTest) %parfor
     % Get user samples
     [trainingSamples, validationSamples] = Shared.getTrainingTestingSamples(trainingPath, usersTest(i));
     
@@ -87,14 +88,18 @@ for i = 1:length(usersTest)
     userResults = evaluateSamples(transformedSamplesTraining, model);
     
     % Set user's training results
-    classificationsTest1(i, :) = userResults.classifications; recognitionsTest1(i, :) = userResults.recognitions; overlapingsTest1(i, :) = userResults.overlapings; procesingTimesTest1(i, :) = userResults.procesingTimes;
+    classificationsTest1(i, :) = userResults.classifications; ... 
+        recognitionsTest1(i, :) = userResults.recognitions; overlapingsTest1(i, :) = ... 
+        userResults.overlapings; procesingTimesTest1(i, :) = userResults.procesingTimes;
     
     % Validation data
     transformedSamplesValidation = transformSamples(validationSamples);
     userResults = evaluateSamples(transformedSamplesValidation, model);
     
     % Set user's training results
-    classificationsTest2(i, :) = userResults.classifications; recognitionsTest2(i, :) = userResults.recognitions; overlapingsTest2(i, :) = userResults.overlapings; procesingTimesTest2(i, :) = userResults.procesingTimes;
+    classificationsTest2(i, :) = userResults.classifications; ... 
+        recognitionsTest2(i, :) = userResults.recognitions; overlapingsTest2(i, :) = ... 
+        userResults.overlapings; procesingTimesTest2(i, :) = userResults.procesingTimes;
 end
 
 % Combine testing part (training and validation samples)
@@ -249,7 +254,17 @@ function labels = postprocessSample(labels, class)
 
     if ismember(Shared.POSTPROCESS, {'1-1', '2-1', '1-2'})
         
-        % Set start and finish of postprocess
+        % Check the first label
+        right = isequal(labels{1,1}, 'noGesture');
+        if isequal(Shared.POSTPROCESS, '1-2')
+            right = isequal(labels{1,2}, class) || isequal(labels{1,3}, 'noGesture');
+        end
+        current = isequal(labels{1,1}, class);
+        if right && current
+            labels{1,1} = 'noGesture';
+        end
+        
+        % Set start and finish for middle labels
         start = 2; finish = length(labels) - 1; % 1-1 by default
         if isequal(Shared.POSTPROCESS, '2-1')
             start = 3;
@@ -274,6 +289,25 @@ function labels = postprocessSample(labels, class)
             if left && right && current
                 labels{1,i} = class;
             end
+            
+            % Replace the class if matches the criterium
+            if ~left && ~right && ~current
+                labels{1,i} = 'noGesture';
+            end
+            
+        end
+        
+        % Check the last label
+        left = isequal(labels{1,length(labels) - 1}, 'noGesture');
+        if isequal(Shared.POSTPROCESS, '2-1')
+            left = isequal(labels{1, length(labels) - 1}, 'noGesture') || ... 
+                isequal(labels{1, length(labels) - 2}, 'noGesture');
+        end
+        current = isequal(labels{1,length(labels)}, class);
+
+        % Replace the class if matches the criterium
+        if left && current
+            labels{1,i} = 'noGesture';
         end
         
     end

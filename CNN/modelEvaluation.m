@@ -3,7 +3,7 @@
 %}
 
 %% DEFINE THE DIRECTORIES WHERE THE DATA WILL BE FOUND
-dataDir = 'EMG_EPN612_Dataset';
+dataDir = 'EMG-EPN612 Dataset';
 trainingDir = 'trainingJSON';
 
 %% GET THE USERS DIRECTORIES
@@ -14,12 +14,13 @@ usersTrainVal = users(1:limit, 1);
 usersTest = users(limit+1:length(users), 1);
 clear dataDir trainingDir users numTestUsers limit
 
-%%                      BORRAR ESTO AL ACABAR SOLO ES PARA HACER PRUEBAS CON PORCIONES
-usersTrainVal = usersTrainVal(1:2);
-usersTest = usersTest(1:2);
+%% ===== JUST FOR TESTING =====
+%usersTrainVal = usersTrainVal(1:2);
+%usersTest = usersTest(1:2);
+%  ===== JUST FOR TESTING =====
 
 %% LOAD THE MODEL
-modelFile = 'model_26-04-2021_09-43-42';
+modelFile = 'model_26-04-2021_09-43-42'; % You have to replace it with a file
 modelFileName = fullfile('models', modelFile);
 model = load(modelFileName).net;
 clear modelFile modelFileName
@@ -34,7 +35,7 @@ clear modelFile modelFileName
     preallocateResults(length(usersTrainVal));
 
 %% EVALUATE EACH USER FOR TRAINING AND VALIDATION
-for i = 1:length(usersTrainVal) % % parfor
+parfor i = 1:length(usersTrainVal)% parfor
     % Get user samples
     [trainingSamples, validationSamples] = Shared.getTrainingTestingSamples(trainingPath, usersTrainVal(i));
     
@@ -78,7 +79,7 @@ clear i trainingSamples validationSamples transformedSamplesValidation classific
     preallocateResults(length(usersTest));
 
 %% EVALUATE EACH USER FOR TESTING
-for i = 1:length(usersTest) 
+parfor i = 1:length(usersTest) %parfor
     % Get user samples
     [trainingSamples, validationSamples] = Shared.getTrainingTestingSamples(trainingPath, usersTest(i));
     
@@ -163,7 +164,7 @@ function userResults = evaluateSamples(samples, model)
 
 
 % ===== JUST FOR TESTING =====
-data = cell(length(samples), 7);  
+%data = cell(length(samples), 7);  
 % ===== JUST FOR TESTING =====
     
     % Preallocate space for results
@@ -184,10 +185,10 @@ data = cell(length(samples), 7);
         repInfo.gestureName = toCategoricalGesture({gesture});
         
         % Evaluate a sample with slidding window
-        [labels, timestamps, processingTimes] = evaluateSampleFrames(emg, model);
+        [labels, timestamps, processingTimes] = evaluateSampleFrames(emg, groundTruth, model);
 
 % ===== JUST FOR TESTING =====
-firstLabels = labels;
+%firstLabels = labels;
 % ===== JUST FOR TESTING =====
 
         % Set a class for the sample
@@ -212,14 +213,14 @@ firstLabels = labels;
         procesingTimes(i) = mean(processingTimes); %time (frame)
         
 % ===== JUST FOR TESTING =====
-data{i, 1} = result.classResult;
-data{i, 2} = result.recogResult;
-data{i, 3} = result.overlappingFactor;
-data{i, 4} = gesture;
-data{i, 5} = char(class);
-data{i, 6} = groundTruth;
-timestamps = num2cell(timestamps);
-data{i, 7} = [cellstr(firstLabels); cellstr(labels); timestamps];
+%data{i, 1} = result.classResult;
+%data{i, 2} = result.recogResult;
+%data{i, 3} = result.overlappingFactor;
+%data{i, 4} = gesture;
+%data{i, 5} = char(class);
+%data{i, 6} = groundTruth;
+%timestamps = num2cell(timestamps);
+%data{i, 7} = [cellstr(firstLabels); cellstr(labels); timestamps];
 % ===== JUST FOR TESTING =====
         
         % Set User Results
@@ -227,7 +228,7 @@ data{i, 7} = [cellstr(firstLabels); cellstr(labels); timestamps];
             recognitions, 'overlapings', overlapings, 'procesingTimes', procesingTimes);
         
 % ===== JUST FOR TESTING =====
-userResults.data = data;  
+%userResults.data = data;  
 % ===== JUST FOR TESTING =====
     end
 end
@@ -273,10 +274,12 @@ function [globalResps, globalStds] = calculateResultsGlobalMean(all, perUser, nu
     
     % Calculate standard deviations regarding users means
     for i = 1:numUsers
+        
         stdClassification = stdClassification + (classificationPerUser(i,1) - accClasification) ^ 2;
         stdRecognition = stdRecognition + (recognitionPerUser(i, 1) - accRecognition) ^ 2;
         stdOverlaping = stdOverlaping + (overlapingPerUser(i, 1) - avgOverlapingFactor) ^ 2;
         stdProcessingTime = stdProcessingTime + (processingTimePerUser(i, 1) - avgProcesingTime) ^ 2;
+        
     end
     
     % Check number of users
@@ -346,7 +349,17 @@ function labels = postprocessSample(labels, class)
 
     if ismember(Shared.POSTPROCESS, {'1-1', '2-1', '1-2'})
         
-        % Set start and finish of postprocess
+        % Check the first label
+        right = isequal(labels{1,1}, 'noGesture');
+        if isequal(Shared.POSTPROCESS, '1-2')
+            right = isequal(labels{1,2}, class) || isequal(labels{1,3}, 'noGesture');
+        end
+        current = isequal(labels{1,1}, class);
+        if right && current
+            labels{1,1} = 'noGesture';
+        end
+        
+        % Set start and finish for middle labels
         start = 2; finish = length(labels) - 1; % 1-1 by default
         if isequal(Shared.POSTPROCESS, '2-1')
             start = 3;
@@ -374,10 +387,22 @@ function labels = postprocessSample(labels, class)
             
             % Replace the class if matches the criterium
             if ~left && ~right && ~current
-                labels{1,i} = "noGesture";
+                labels{1,i} = 'noGesture';
             end
             
-            
+        end
+        
+        % Check the last label
+        left = isequal(labels{1,length(labels) - 1}, 'noGesture');
+        if isequal(Shared.POSTPROCESS, '2-1')
+            left = isequal(labels{1, length(labels) - 1}, 'noGesture') || ... 
+                isequal(labels{1, length(labels) - 2}, 'noGesture');
+        end
+        current = isequal(labels{1,length(labels)}, class);
+
+        % Replace the class if matches the criterium
+        if left && current
+            labels{1,i} = 'noGesture';
         end
         
     end
@@ -422,11 +447,11 @@ function class = classifyPredictions(yPred)
 end
 
 %% FUNCTION TO EVALUATE SAMPLE FRAMES
-function [labels, timestamps, processingTimes] = evaluateSampleFrames(signal, model)
+function [labels, timestamps, processingTimes] = evaluateSampleFrames(signal, groundTruth, model)
     
     % Calculate the number of windows
     numPoints = length(signal);
-    if isequal(Shared.FILLING_TYPE, 'before') || isequal(Shared.FILLING_TYPE, 'during')
+    if isequal(Shared.FILLING_TYPE, 'before')
          
         numWindows = floor((numPoints - (Shared.FRAME_WINDOW / 2)) / Shared.WINDOW_STEP_RECOG) + 1;
         stepLimit = numPoints - floor(Shared.FRAME_WINDOW / 2) + 1;
@@ -445,8 +470,15 @@ function [labels, timestamps, processingTimes] = evaluateSampleFrames(signal, mo
     
     % Fill before frame classification
     if isequal(Shared.FILLING_TYPE, 'before')
-        filling = (2 * Shared.noGestureStd) * rand(Shared.FRAME_WINDOW / 2, Shared.numChannels) ... 
-            + (Shared.noGestureMean - Shared.noGestureStd);
+        
+        % Get a nogesture portion of the sample to use as filling
+        if groundTruth
+            noGestureInSignal = signal(~groundTruth, :);
+            filling = noGestureInSignal(1: floor(Shared.FRAME_WINDOW / 2), :);
+        else
+            filling = signal(1: floor(Shared.FRAME_WINDOW / 2), :);
+        end
+        % Combine the sample with the filling
         signal = [signal; filling];
     end
     
@@ -459,19 +491,11 @@ function [labels, timestamps, processingTimes] = evaluateSampleFrames(signal, mo
         finish = inicio + Shared.FRAME_WINDOW - 1;
         timestamp = inicio + floor((Shared.FRAME_WINDOW - 1) / 2);
         
-        % Fill during frame classification
-        if isequal(Shared.FILLING_TYPE, 'during') && finish > numPoints
-            
-            extraPoints = finish - numPoints + 1;
-            fill = (2 * Shared.noGestureStd) * rand(extraPoints, Shared.numChannels) ... 
-                + (Shared.noGestureMean - Shared.noGestureStd);
-            frameSignal =  [signal(inicio:numPoints, :); fill];
-            
-        else
-            frameSignal = signal(inicio:finish, :);
-        end
-        
+        % Get the frame signal
+        frameSignal = signal(inicio:finish, :);
         frameSignal = Shared.preprocessSignal(frameSignal);
+        
+        % Classify the signal
         spectrograms = Shared.generateSpectrograms(frameSignal);
         [predicction, predictedScores] = classify(model,spectrograms);
         

@@ -17,7 +17,7 @@ numSample = 40;
 if numSample > 25
     sample = getSample(trainingPath, user, numSample, type);
 else
-    disp('Not allowed to select noGesture samples and samples outside the bounderies [0:125]');
+    disp('Not allowed to select noGesture samples and samples outside the bounderies [26:150]');
 end
 
 %% PREPORCESS THE SIGNAL
@@ -187,4 +187,3 @@ function visualizeFrames(signal, sample, user, numSample,channel, type)
         end
     end
 end
-

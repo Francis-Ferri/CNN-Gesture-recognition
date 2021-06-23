@@ -13,33 +13,34 @@ classdef Shared
         % Frame
         FRAME_WINDOW = 300;
         WINDOW_STEP = 15; % To obtain the frames
+        % if frame > TOLERANCE_WINDOW || frame > TOLERNCE_GESTURE -> gesture
         TOLERANCE_WINDOW = 0.75;
         TOLERNCE_GESTURE = 0.5; % 0.75 0.25; 
         
         % Recognition
-        WINDOW_STEP_RECOG = 15;
-        FRAME_CLASS_THRESHOLD = 0.5;
+        WINDOW_STEP_RECOG = 15; % 15 30
+        FRAME_CLASS_THRESHOLD = 0.5; % 0.75 0.25;
+        % if labels > MIN_LABELS_SEQUENCE -> true
         MIN_LABELS_SEQUENCE = 4;
-        FILLING_TYPE = 'before'
-        POSTPROCESS = '1-1';
+        FILLING_TYPE = 'before'; % 'before' 'none'
+        POSTPROCESS = '1-1'; % '1-1' '1-2' '2-1'
         
         % For LSTM
-        FILLING_TYPE_LSTM = 'before'; % before none
-        NOGESTURE_FILL = 'all' % some all
-        NOGESTURE_IN_SEQUENCE = 3;
-        WINDOW_STEP_LSTM = 15;
-        PAD_KIND = 'shortest'; % shortest longest
+        FILLING_TYPE_LSTM = 'before'; % 'before' 'none'
+        NOGESTURE_FILL = 'some' % 'some' 'all'
+        NOGESTURE_IN_SEQUENCE = 3; % if 'some'
+        WINDOW_STEP_LSTM = 15; % 15 30
+        PAD_KIND = 'shortest'; % 'shortest' 'longest'
         TOLERNCE_GESTURE_LSTM = 0.5; % 0.75 0.25;
+        NUM_HIDDEN_UNITS = 128; % 128 %58(60) %27(30)
         
         % Samples and signals
         numSamplesUser = 150;
         numGestureRepetitions = 25;
         numChannels = 8;
-        noGestureMean = -0.83;
-        noGestureStd = 0.17;
         
-        % User
-        numTestUsers = 14;
+        % User distribution
+        numTestUsers = 16;
     end
     
     methods(Static)
@@ -124,7 +125,7 @@ classdef Shared
             % Spectrograms generation
             for i = 1:size(signal, 2)
                 [s,~,~,~] = spectrogram(signal(:,i), Shared.WINDOW, Shared.OVERLAPPING, ... 
-                    Shared.FRECUENCIES, sampleFrecuency, 'yaxis'); % ps
+                    Shared.FRECUENCIES, sampleFrecuency, 'yaxis'); % [~,~,~,ps]
                 spectrograms(:,:,i) = abs(s); % ps;
             end
         end
@@ -171,6 +172,9 @@ end
 
 %% EXTRA
 %{
-    % CONSIDER_PREVIOUS = true % true false
+    %% PROPERTIES
+    %noGestureMean = -0.83;
+    %noGestureStd = 0.17;
+    %CONSIDER_PREVIOUS = true % true false
     %SEQUENCE_INIT = 'noGesture'; % zeros noGesture 
 %}

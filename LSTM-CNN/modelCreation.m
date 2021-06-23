@@ -47,15 +47,15 @@ analyzeNetwork(lgraph);
 clear numClasses
 
 %% THE OPTIONS ARE DIFINED
-%gpuDevice(1);
-maxEpochs = 1;%10
-miniBatchSize = 32;%1024
+gpuDevice(1);
+maxEpochs = 10;%10
+miniBatchSize = 64;%64
 options = trainingOptions('adam', ...
     'InitialLearnRate', 0.001, ...
     'LearnRateSchedule','piecewise', ...
     'LearnRateDropFactor',0.2, ...
-    'LearnRateDropPeriod',3, ... %8
-    'ExecutionEnvironment','cpu', ... %gpu
+    'LearnRateDropPeriod',8, ... %8
+    'ExecutionEnvironment','gpu', ... %gpu
     'GradientThreshold',1, ...
     'MaxEpochs',maxEpochs, ...
     'MiniBatchSize',miniBatchSize, ...
@@ -94,9 +94,6 @@ calculateConfusionMatrix(flattenLabelsValidation, 'validation');
 calculateConfusionMatrix(flattenLabelsTesting, 'testing');
 
 %% SAVE MODEL
-if ~exist("ModelsLSTM", 'dir')
-   mkdir("ModelsLSTM");
-end
 save(['ModelsLSTM/model_', datestr(now,'dd-mm-yyyy_HH-MM-ss')], 'net');
 
 %% FUNCTION TO STABLISH THE NEURAL NETWORK ARCHITECTURE
@@ -274,7 +271,7 @@ function lgraph = setNeuralNetworkArchitecture(inputSize, numClasses)
     tempLayers = [
         sequenceUnfoldingLayer("Name","sequnfold")
         flattenLayer("Name","flatten")
-        lstmLayer(128,'OutputMode','sequence',"Name","lstm")
+        lstmLayer(Shared.NUM_HIDDEN_UNITS,'OutputMode','sequence',"Name","lstm")
         fullyConnectedLayer(numClasses,"Name","fc_1")
         softmaxLayer("Name","softmax")
         classificationLayer("Name","classoutput")];

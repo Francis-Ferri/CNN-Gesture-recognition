@@ -63,4 +63,3 @@ function visualizeFramesInDatstore(frames, labels, type, channel)
         subPlotSpectrogram(i, frames{i}, labels{i}, channel, length(frames));
     end
 end
-

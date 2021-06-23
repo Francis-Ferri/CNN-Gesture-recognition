@@ -47,15 +47,15 @@ analyzeNetwork(lgraph);
 clear numClasses
 
 %% THE OPTIONS ARE DIFINED
-%gpuDevice(1);
-maxEpochs = 1;%10
-miniBatchSize = 32;%1024
+gpuDevice(1);
+maxEpochs = 10;%10
+miniBatchSize = 1024;%1024
 options = trainingOptions('adam', ...
     'InitialLearnRate', 0.001, ...
     'LearnRateSchedule','piecewise', ...
     'LearnRateDropFactor',0.2, ...
-    'LearnRateDropPeriod',3, ... %8
-    'ExecutionEnvironment','cpu', ... %gpu
+    'LearnRateDropPeriod',8, ... %8
+    'ExecutionEnvironment','gpu', ... %gpu
     'GradientThreshold',1, ...
     'MaxEpochs',maxEpochs, ...
     'MiniBatchSize',miniBatchSize, ...
@@ -94,10 +94,7 @@ calculateConfusionMatrix(net, validationDatastore, 'validation', withNoGesture);
 calculateConfusionMatrix(net, testingDatastore, 'testing', withNoGesture);
 
 %% SAVE MODEL
-if ~exist("models", 'dir')
-   mkdir("models");
-end
-save(['models/model_', datestr(now,'dd-mm-yyyy_HH-MM-ss')], 'net');
+save(['Models/model_', datestr(now,'dd-mm-yyyy_HH-MM-ss')], 'net');
 
 %% FUNCTION TO STABLISH THE NEURAL NETWORK ARCHITECTURE
 function lgraph = setNeuralNetworkArchitecture(inputSize, numClasses)
@@ -358,7 +355,7 @@ end
 %% EXTRA THINGS
 %{
 
-    %% DIVIDE DATASTORE
+        %% DIVIDE DATASTORE
 
     %% FUNCTION TO DIVIDE DATASTORE IN TWO HALVES
     function [firstDatstore, secondDatastore] = divideDatastore(dataStore, percentage)
