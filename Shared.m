@@ -25,6 +25,9 @@ classdef Shared
         FILLING_TYPE = 'before'; % 'before' 'none'
         POSTPROCESS = '1-1'; % '1-1' '1-2' '2-1'
         
+        % Evaluation
+        FILLING_TYPE_EVAL = 'none'; % 'before' 'none'
+        
         % For LSTM
         FILLING_TYPE_LSTM = 'before'; % 'before' 'none'
         NOGESTURE_FILL = 'some' % 'some' 'all'
@@ -40,6 +43,7 @@ classdef Shared
         numChannels = 8;
         
         % User distribution
+        includeTesting = false; %false true
         numTestUsers = 16;
     end
     
@@ -164,6 +168,101 @@ classdef Shared
             end
             classes = Shared.setNoGestureUse(withNoGesture);
             labels = categorical(labels, classes);
+        end
+        
+        % FUNCTION TO CLASSIFY PREDICTIONS
+        function class = classifyPredictions(yPred)
+            categories = Shared.setNoGestureUse(true); % Provemos a quitar el categorical
+
+            % Delete noGestures
+            idxs = cellfun(@(label) ~isequal(label,'noGesture'), yPred);
+            yPred = categorical(yPred(idxs),Shared.setNoGestureUse(true));
+
+            % Count the number of labels per gesture
+            catCounts = countcats(yPred);
+            [catCounts,indexes] = sort(catCounts,'descend');
+            newCategories = categories(indexes);
+
+            % Set the class if labels are over the theashold
+            if catCounts(1) >= Shared.MIN_LABELS_SEQUENCE
+               class = newCategories(1);
+            else
+               class = categorical({'noGesture'}, Shared.setNoGestureUse(true)); 
+            end
+        end
+        
+        % FUNCTION TO POST PROCESS THE SAMPLE
+        function labels = postprocessSample(labels, class)
+
+            if ismember(Shared.POSTPROCESS, {'1-1', '2-1', '1-2'})
+
+                % Check the first label
+                right = isequal(labels{1,1}, 'noGesture');
+                if isequal(Shared.POSTPROCESS, '1-2')
+                    right = isequal(labels{1,2}, class) || isequal(labels{1,3}, 'noGesture');
+                end
+                current = isequal(labels{1,1}, class);
+                if right && current
+                    labels{1,1} = 'noGesture';
+                end
+
+                % Set start and finish for middle labels
+                start = 2; finish = length(labels) - 1; % 1-1 by default
+                if isequal(Shared.POSTPROCESS, '2-1')
+                    start = 3;
+                elseif isequal(Shared.POSTPROCESS, '1-2')
+                    finish = length(labels) - 2;
+                end
+
+                % Check for misclassified labels
+                for i = start:finish
+
+                    % Check left-current-right classes
+                    left = isequal(labels{1,i-1}, class);
+                    right = isequal(labels{1,i+1}, class);
+                    if isequal(Shared.POSTPROCESS, '2-1')
+                        left = isequal(labels{1,i-1}, class) || isequal(labels{1,i-2}, class);
+                    elseif isequal(Shared.POSTPROCESS, '1-2')
+                        right = isequal(labels{1,i+1}, class) || isequal(labels{1,i+2}, class);
+                    end
+                    current = ~isequal(labels{1,i}, class);
+
+                    % Replace the class if matches the criterium
+                    if left && right && current
+                        labels{1,i} = class;
+                    end
+
+                    % Replace the class if matches the criterium
+                    if ~left && ~right && ~current
+                        labels{1,i} = 'noGesture';
+                    end
+
+                end
+
+                % Check the last label
+                left = isequal(labels{1,length(labels) - 1}, 'noGesture');
+                if isequal(Shared.POSTPROCESS, '2-1')
+                    left = isequal(labels{1, length(labels) - 1}, 'noGesture') || ... 
+                        isequal(labels{1, length(labels) - 2}, 'noGesture');
+                end
+                current = isequal(labels{1,length(labels)}, class);
+
+                % Replace the class if matches the criterium
+                if left && current
+                    labels{1,i} = 'noGesture';
+                end
+
+            end
+
+            % Set wrong labels to noGestute
+            for i = 1:length(labels)
+                if ~isequal(labels{1,i}, class)
+                    labels{1,i} = 'noGesture';
+                end
+            end
+
+            % Transform to categorical
+            labels = categorical(labels, Shared.setNoGestureUse(true));
         end
         
     end

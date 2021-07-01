@@ -8,10 +8,14 @@ trainingDir = 'trainingJSON';
 
 %% GET THE USERS DIRECTORIES
 [users, trainingPath] = Shared.getUsers(dataDir, trainingDir);
-% Divide in two datasets
-limit = length(users)- Shared.numTestUsers;
-usersTrainVal = users(1:limit, 1);
-usersTest = users(limit+1:length(users), 1);
+if Shared.includeTesting
+    % Divide in two datasets
+    limit = length(users)- Shared.numTestUsers;
+    usersTrainVal = users(1:limit, 1);
+    usersTest = users(limit+1:length(users), 1);
+else
+    usersTrainVal = users;
+end
 % Clean up variables
 clear dataDir trainingDir users numTestUsers limit
 
@@ -24,15 +28,21 @@ clear dataDir trainingDir users numTestUsers limit
 categories = {'fist'; 'open'; 'pinch'; 'waveIn'; 'waveOut'};
 trainingDatastore = createDatastore('Datastores/training', categories);
 validationDatastore = createDatastore('Datastores/validation', categories);
-testingDatastore = createDatastore('Datastores/testing', categories);
+if Shared.includeTesting
+    testingDatastore = createDatastore('Datastores/testing', categories);
+end
 % Clean up variables
 clear categories
 
 %% GENERATION OF SPECTROGRAMS TO CREATE THE MODEL
-usersSets = {usersTrainVal, 'usersTrainVal'; usersTest, 'usersTest'};
+if Shared.includeTesting
+    usersSets = {usersTrainVal, 'usersTrainVal'; usersTest, 'usersTest'};
+else
+    usersSets = {usersTrainVal, 'usersTrainVal'};
+end
 
 % For each user set (trainVal and test)
-for i = 1:length(usersSets)
+for i = 1:size(usersSets, 1)
     
     % Select a set of users
     users = usersSets{i,1};
@@ -63,8 +73,13 @@ clear i j categories validationSamples transformedSamplesValidation users usersS
 
 %% INCLUDE NOGESTURE
 % Define the directories where the frames will be found
-datastores = {trainingDatastore; validationDatastore; testingDatastore};
-usersInDatastore = {length(usersTrainVal); length(usersTrainVal); length(usersTest)};
+if Shared.includeTesting
+    datastores = {trainingDatastore; validationDatastore; testingDatastore};
+    usersInDatastore = {length(usersTrainVal); length(usersTrainVal); length(usersTest)};
+else
+    datastores = {trainingDatastore; validationDatastore};
+    usersInDatastore = {length(usersTrainVal); length(usersTrainVal)};
+end
 noGesturePerUser = cell(length(datastores), 1);
 % Clean up variables
 clear trainingSamples transformedSamplesTraining trainingDatastore validationDatastore testingDatastore
@@ -90,7 +105,9 @@ clear i labels fds catCounts minNumber
 categories = {'noGesture'};
 trainingDatastore = createDatastore(datastores{1,1}, categories);
 validationDatastore = createDatastore(datastores{2,1}, categories);
-testingDatastore = createDatastore(datastores{3,1}, categories);
+if Shared.includeTesting
+    testingDatastore = createDatastore(datastores{3,1}, categories);
+end
 clear categories datastores
 
 %% GENERATION OF NOGESTURE SPECTROGRAMS TO CREATE THE MODEL
@@ -98,9 +115,11 @@ clear categories datastores
 % Get the number of noGesture per dataset
 noGestureTraining = noGesturePerUser{1,1};
 noGestureValidation = noGesturePerUser{2,1};
-noGestureTesting = ceil(noGesturePerUser{3,1} / 2);
+if Shared.includeTesting
+    noGestureTesting = ceil(noGesturePerUser{3,1} / 2);
+end
 
-for i = 1:length(usersSets)
+for i = 1:size(usersSets, 1)
     % Select a set of users
     users = usersSets{i,1};
     usersSet = usersSets{i,2};
@@ -127,6 +146,7 @@ for i = 1:length(usersSets)
         saveSampleInDatastore(transformedSamplesValidation, users(j), 'train', datastore2);
     end
 end
+
 % Clean up variables
 clear i j validationSamples transformedSamplesValidation trainingDatastore validationDatastore 
 clear testingDatastore users usersSet noGestureTraining noGestureValidation noGestureTesting
@@ -214,7 +234,7 @@ function transformedSamples = generateData(samples)
     end
 end
 
-%% FUNCTION O GENERATE NO GESTURE FRAMES
+%% FUNCTION TO GENERATE NO GESTURE FRAMES
 function data = generateFramesNoGesture(signal, numWindows)
     % Allocate space for the results
     data = cell(numWindows, 2);

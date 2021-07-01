@@ -8,10 +8,14 @@ trainingDir = 'trainingJSON';
 
 %% GET THE USERS DIRECTORIES
 [users, trainingPath] = Shared.getUsers(dataDir, trainingDir);
-% Divide in two datasets
-limit = length(users)- Shared.numTestUsers;
-usersTrainVal = users(1:limit, 1);
-usersTest = users(limit+1:length(users), 1);
+if Shared.includeTesting
+    % Divide in two datasets
+    limit = length(users)- Shared.numTestUsers;
+    usersTrainVal = users(1:limit, 1);
+    usersTest = users(limit+1:length(users), 1);
+else
+    usersTrainVal = users;
+end
 % Clean up variables
 clear dataDir trainingDir users numTestUsers limit
 
@@ -24,22 +28,28 @@ clear dataDir trainingDir users numTestUsers limit
 categories = {'fist'; 'open'; 'pinch'; 'waveIn'; 'waveOut'};
 trainingDatastore = createDatastore('DatastoresLSTM/training', categories);
 validationDatastore = createDatastore('DatastoresLSTM/validation', categories);
-testingDatastore = createDatastore('DatastoresLSTM/testing', categories);
+if Shared.includeTesting
+    testingDatastore = createDatastore('DatastoresLSTM/testing', categories);
+end
 % Clean up variables
 clear categories
 
 %% GENERATION OF SPECTROGRAMS TO CREATE THE MODEL
-usersSets = {usersTrainVal, 'usersTrainVal'; usersTest, 'usersTest'};
+if Shared.includeTesting
+    usersSets = {usersTrainVal, 'usersTrainVal'; usersTest, 'usersTest'};
+else
+    usersSets = {usersTrainVal, 'usersTrainVal'};
+end
 
 % For each user set (trainVal and test)
-for i = 1:length(usersSets)
+for i = 1:size(usersSets, 1)
     
     % Select a set of users
     users = usersSets{i,1};
     usersSet = usersSets{i,2};
     
     if isequal(usersSet, 'usersTrainVal')
-            [datastore1, datastore2] = deal(trainingDatastore, validationDatastore);
+        [datastore1, datastore2] = deal(trainingDatastore, validationDatastore);
     elseif isequal(usersSet, 'usersTest')
         [datastore1, datastore2] = deal(testingDatastore, testingDatastore);
     end
@@ -63,7 +73,11 @@ clear i j categories validationSamples transformedSamplesValidation users usersS
 
 %% INCLUDE NOGESTURE
 % Define the directories where the sequences will be added
-datastores = {trainingDatastore; validationDatastore; testingDatastore};
+if Shared.includeTesting
+    datastores = {trainingDatastore; validationDatastore; testingDatastore};
+else
+    datastores = {trainingDatastore; validationDatastore};
+end
 noGestureFramesPerSample = cell(length(datastores), 1);
 % Clean up variables
 clear trainingSamples transformedSamplesTraining trainingDatastore validationDatastore testingDatastore
@@ -128,7 +142,9 @@ clear i j k class gestures filesClass frames idxs avgNumFramesClass labels numFi
 categories = {'noGesture'};
 trainingDatastore = createDatastore(datastores{1,1}, categories);
 validationDatastore = createDatastore(datastores{2,1}, categories);
-testingDatastore = createDatastore(datastores{3,1}, categories);
+if Shared.includeTesting
+    testingDatastore = createDatastore(datastores{3,1}, categories);
+end
 clear categories datastores
 
 %% GENERATION OF NOGESTURE SPECTROGRAMS TO CREATE THE MODEL
@@ -136,9 +152,11 @@ clear categories datastores
 % Get the number of noGesture per dataset
 noGestureTraining = noGestureFramesPerSample{1,1};
 noGestureValidation = noGestureFramesPerSample{2,1};
-noGestureTesting = noGestureFramesPerSample{3,1};
+if Shared.includeTesting
+    noGestureTesting = noGestureFramesPerSample{3,1};
+end
 
-for i = 1:length(usersSets)
+for i = 1:size(usersSets, 1)
     % Select a set of users
     users = usersSets{i,1};
     usersSet = usersSets{i,2};
@@ -186,7 +204,7 @@ end
 function [data, groundTruth] = generateFrames(signal, groundTruth, numGesturePoints, gestureName)
 
     % Fill before frame classification
-    if isequal(Shared.FILLING_TYPE_LSTM, 'before')
+    if isequal(Shared.FILLING_TYPE_EVAL, 'before')
         
         % Get a nogesture portion of the sample to use as filling
         noGestureInSignal = signal(~groundTruth, :);
@@ -342,8 +360,8 @@ function data = generateFramesNoGesture(signal, requestedWindows)
       
     % For each window
     for i = 1:requestedWindows
+        
         % Get window information
-        % TODO: (Opcional) Añadir un desplazamiento en el relleno por si comienza irregular
         traslation = ((i-1) * Shared.WINDOW_STEP_LSTM);
         inicio = 1 + traslation;
         finish = Shared.FRAME_WINDOW + traslation;

@@ -8,10 +8,14 @@ trainingDir = 'trainingJSON';
 
 %% GET THE USERS DIRECTORIES
 [users, trainingPath] = Shared.getUsers(dataDir, trainingDir);
-% Divide in two datasets
-limit = length(users)- Shared.numTestUsers;
-usersTrainVal = users(1:limit, 1);
-usersTest = users(limit+1:length(users), 1);
+if Shared.includeTesting
+    % Divide in two datasets
+    limit = length(users)- Shared.numTestUsers;
+    usersTrainVal = users(1:limit, 1);
+    usersTest = users(limit+1:length(users), 1);
+else
+    usersTrainVal = users;
+end
 clear dataDir trainingDir users numTestUsers limit
 
 %% ===== JUST FOR TESTING =====
@@ -20,13 +24,12 @@ clear dataDir trainingDir users numTestUsers limit
 %  ===== JUST FOR TESTING =====
 
 %% LOAD THE MODEL
-modelFile = 'model_26-04-2021_09-43-42'; % You have to replace it with a file
+modelFile = 'model'; % You have to replace it with a file
 modelFileName = fullfile('models', modelFile);
 model = load(modelFileName).net;
 clear modelFile modelFileName
 
 %% PREALLOCATE SPACE FOR RESULTS TRAINING AND VALIDATION
-% Allocate space to save the results
 % Training
 [classifications, recognitions, overlapings, procesingTimes] =  ... 
     preallocateResults(length(usersTrainVal));
@@ -71,47 +74,50 @@ resultsValidation = calculateValidationResults(classificationsVal, recognitionsV
 clear i trainingSamples validationSamples transformedSamplesValidation classifications recognitions overlapings procesingTimes classificationsVal recognitionsVal overlapingsVal procesingTimesVal
 
 %% PREALLOCATE SPACE FOR RESULTS TESTING
-% Testing - users training samples
-[classificationsTest1, recognitionsTest1, overlapingsTest1, procesingTimesTest1] =  ...
-    preallocateResults(length(usersTest));
-% Testing - users validation samples
-[classificationsTest2, recognitionsTest2, overlapingsTest2, procesingTimesTest2] =  ...
-    preallocateResults(length(usersTest));
-
-%% EVALUATE EACH USER FOR TESTING
-parfor i = 1:length(usersTest) %parfor
-    % Get user samples
-    [trainingSamples, validationSamples] = Shared.getTrainingTestingSamples(trainingPath, usersTest(i));
-    
-    % Transform samples
-    transformedSamplesTraining = transformSamples(trainingSamples);
-    userResults = evaluateSamples(transformedSamplesTraining, model);
-    
-    % Set user's training results
-    [classificationsTest1(i, :), recognitionsTest1(i, :), overlapingsTest1(i, :) ... 
-        , procesingTimesTest1(i, :)] = deal(userResults.classifications, ... 
-        userResults.recognitions, userResults.overlapings, userResults.procesingTimes);
-    
-    % Validation data
-    transformedSamplesValidation = transformSamples(validationSamples);
-    userResults = evaluateSamples(transformedSamplesValidation, model);
-    
-    % Set user's training results
-    [classificationsTest2(i, :), recognitionsTest2(i, :), overlapingsTest2(i, :), ... 
-        procesingTimesTest2(i, :)] = deal(userResults.classifications, ... 
-        userResults.recognitions, userResults.overlapings, userResults.procesingTimes);
+if Shared.includeTesting
+    % Testing - users training samples
+    [classificationsTest1, recognitionsTest1, overlapingsTest1, procesingTimesTest1] =  ...
+        preallocateResults(length(usersTest));
+    % Testing - users validation samples
+    [classificationsTest2, recognitionsTest2, overlapingsTest2, procesingTimesTest2] =  ...
+        preallocateResults(length(usersTest));
 end
 
-% Combine testing part (training and validation samples)
-[classificationsTest, recognitionsTest, overlapingsTest, procesingTimesTest] = ... 
-    deal([classificationsTest1; classificationsTest2], [recognitionsTest1; recognitionsTest2], ... 
-    [overlapingsTest1; overlapingsTest2], [procesingTimesTest1; procesingTimesTest2]);
+%% EVALUATE EACH USER FOR TESTING
+if Shared.includeTesting
+    parfor i = 1:length(usersTest) %parfor
+        % Get user samples
+        [trainingSamples, validationSamples] = Shared.getTrainingTestingSamples(trainingPath, usersTest(i));
 
-% Print the results
-fprintf('\n\n\tTesting data results\n\n');
-dataTest = calculateValidationResults(classificationsTest, recognitionsTest, ... 
-    overlapingsTest, procesingTimesTest, length(usersTest));
+        % Transform samples
+        transformedSamplesTraining = transformSamples(trainingSamples);
+        userResults = evaluateSamples(transformedSamplesTraining, model);
 
+        % Set user's training results
+        [classificationsTest1(i, :), recognitionsTest1(i, :), overlapingsTest1(i, :) ... 
+            , procesingTimesTest1(i, :)] = deal(userResults.classifications, ... 
+            userResults.recognitions, userResults.overlapings, userResults.procesingTimes);
+
+        % Validation data
+        transformedSamplesValidation = transformSamples(validationSamples);
+        userResults = evaluateSamples(transformedSamplesValidation, model);
+
+        % Set user's training results
+        [classificationsTest2(i, :), recognitionsTest2(i, :), overlapingsTest2(i, :), ... 
+            procesingTimesTest2(i, :)] = deal(userResults.classifications, ... 
+            userResults.recognitions, userResults.overlapings, userResults.procesingTimes);
+    end
+
+    % Combine testing part (training and validation samples)
+    [classificationsTest, recognitionsTest, overlapingsTest, procesingTimesTest] = ... 
+        deal([classificationsTest1; classificationsTest2], [recognitionsTest1; recognitionsTest2], ... 
+        [overlapingsTest1; overlapingsTest2], [procesingTimesTest1; procesingTimesTest2]);
+
+    % Print the results
+    fprintf('\n\n\tTesting data results\n\n');
+    dataTest = calculateValidationResults(classificationsTest, recognitionsTest, ... 
+        overlapingsTest, procesingTimesTest, length(usersTest));
+end
 clear i trainingSamples validationSamples transformedSamplesValidation classificationsTest1 recognitionsTest1 overlapingsTest1 procesingTimesTest1 classificationsTest2 recognitionsTest2 overlapingsTest2 procesingTimesTest2n classificationsTest recognitionsTest overlapingsTest procesingTimesTest
 
 %% FUCTION TO PREALLOCATE SPACE FOR VALIDATION LIBRARY RESULT
@@ -123,7 +129,7 @@ function [clasifications, recognitions, overlapings, procesingTimes] = prealloca
     procesingTimes = zeros(numUsers, Shared.numSamplesUser);
 end
 
-%% CREAR DATOS DE ESPECTROGRAMAS
+%% CREATE SPECTROGRAM DATA
 function transformedSamples = transformSamples(samples)
     % Get sample keys
     samplesKeys = fieldnames(samples);
@@ -162,11 +168,6 @@ end
 %% FUNCTION TO EVALUETE SAMPLES OF A USER
 function userResults = evaluateSamples(samples, model)
 
-
-% ===== JUST FOR TESTING =====
-%data = cell(length(samples), 7);  
-% ===== JUST FOR TESTING =====
-    
     % Preallocate space for results
     [classifications, recognitions, overlapings, procesingTimes] = preallocateUserResults(length(samples));
     
@@ -182,20 +183,18 @@ function userResults = evaluateSamples(samples, model)
         if ~isequal(gesture,'noGesture')
             repInfo.groundTruth = logical(groundTruth);
         end
-        repInfo.gestureName = toCategoricalGesture({gesture});
+        repInfo.gestureName = categorical({gesture}, Shared.setNoGestureUse(true));
         
         % Evaluate a sample with slidding window
         [labels, timestamps, processingTimes] = evaluateSampleFrames(emg, groundTruth, model);
 
-% ===== JUST FOR TESTING =====
-%firstLabels = labels;
-% ===== JUST FOR TESTING =====
-
         % Set a class for the sample
-        class = classifyPredictions(labels);
+        class = Shared.classifyPredictions(labels);
         
         % Postprocess the sample (labels)
-        labels = postprocessSample(labels, char(class));
+        labels = Shared.postprocessSample(labels, char(class));
+        % Transform to categorical
+        %labels = categorical(labels, Shared.setNoGestureUse(true));
         
         % Prepare response
         response = struct('vectorOfLabels', labels, 'vectorOfTimePoints', timestamps, ... 
@@ -211,25 +210,11 @@ function userResults = evaluateSamples(samples, model)
             overlapings(i) = result.overlappingFactor;
         end
         procesingTimes(i) = mean(processingTimes); %time (frame)
-        
-% ===== JUST FOR TESTING =====
-%data{i, 1} = result.classResult;
-%data{i, 2} = result.recogResult;
-%data{i, 3} = result.overlappingFactor;
-%data{i, 4} = gesture;
-%data{i, 5} = char(class);
-%data{i, 6} = groundTruth;
-%timestamps = num2cell(timestamps);
-%data{i, 7} = [cellstr(firstLabels); cellstr(labels); timestamps];
-% ===== JUST FOR TESTING =====
-        
+                
         % Set User Results
         userResults = struct('classifications', classifications,  'recognitions', ... 
             recognitions, 'overlapings', overlapings, 'procesingTimes', procesingTimes);
         
-% ===== JUST FOR TESTING =====
-%userResults.data = data;  
-% ===== JUST FOR TESTING =====
     end
 end
 
@@ -243,6 +228,7 @@ function [classificationPerUser, recognitionPerUser, overlapingPerUser, processi
     
     % Calculate results per user
     for i = 1:numUsers
+        
         classificationPerUser(i, 1) = sum(classifications(i, :) == 1) / length(classifications(i, :));
         % NoGesture omitted it has value = -1 
         recognitionPerUser(i , 1) = sum(recognitions(i, :) == 1) / ... 
@@ -250,6 +236,7 @@ function [classificationPerUser, recognitionPerUser, overlapingPerUser, processi
         overlapingsUser = overlapings(i, :);
         overlapingPerUser(i, 1) = mean(overlapingsUser(overlapingsUser ~= -1),'omitnan');
         processingTimePerUser(i, 1) = mean(procesingTimes(i, :));
+        
     end
 end
 
@@ -344,119 +331,17 @@ function results = calculateValidationResults(classifications, recognitions, ove
         'procesingTime', globalResps.avgProcesingTime);
 end
 
-%% FUNCTION TO SET WRONG LABELS TO NOGESTURE
-function labels = postprocessSample(labels, class)
-
-    if ismember(Shared.POSTPROCESS, {'1-1', '2-1', '1-2'})
-        
-        % Check the first label
-        right = isequal(labels{1,1}, 'noGesture');
-        if isequal(Shared.POSTPROCESS, '1-2')
-            right = isequal(labels{1,2}, class) || isequal(labels{1,3}, 'noGesture');
-        end
-        current = isequal(labels{1,1}, class);
-        if right && current
-            labels{1,1} = 'noGesture';
-        end
-        
-        % Set start and finish for middle labels
-        start = 2; finish = length(labels) - 1; % 1-1 by default
-        if isequal(Shared.POSTPROCESS, '2-1')
-            start = 3;
-        elseif isequal(Shared.POSTPROCESS, '1-2')
-            finish = length(labels) - 2;
-        end
-
-        % Check for misclassified labels
-        for i = start:finish
-            
-            % Check left-current-right classes
-            left = isequal(labels{1,i-1}, class);
-            right = isequal(labels{1,i+1}, class);
-            if isequal(Shared.POSTPROCESS, '2-1')
-                left = isequal(labels{1,i-1}, class) || isequal(labels{1,i-2}, class);
-            elseif isequal(Shared.POSTPROCESS, '1-2')
-                right = isequal(labels{1,i+1}, class) || isequal(labels{1,i+2}, class);
-            end
-            current = ~isequal(labels{1,i}, class);
-           
-            % Replace the class if matches the criterium
-            if left && right && current
-                labels{1,i} = class;
-            end
-            
-            % Replace the class if matches the criterium
-            if ~left && ~right && ~current
-                labels{1,i} = 'noGesture';
-            end
-            
-        end
-        
-        % Check the last label
-        left = isequal(labels{1,length(labels) - 1}, 'noGesture');
-        if isequal(Shared.POSTPROCESS, '2-1')
-            left = isequal(labels{1, length(labels) - 1}, 'noGesture') || ... 
-                isequal(labels{1, length(labels) - 2}, 'noGesture');
-        end
-        current = isequal(labels{1,length(labels)}, class);
-
-        % Replace the class if matches the criterium
-        if left && current
-            labels{1,i} = 'noGesture';
-        end
-        
-    end
-        
-    % Set wrong labels to noGestute
-    for i = 1:length(labels)
-        if ~isequal(labels{1,i}, class)
-            labels{1,i} = 'noGesture';
-        end
-    end
-    
-    % Transform to categorical
-    labels = toCategoricalGesture(labels);
-end
-
-%% FUNCTION TO TRANSFORM TOCATEGORICAL
-function yCat = toCategoricalGesture(yPred)
-    gestures = {'fist', 'noGesture', 'open', 'pinch', 'waveIn', 'waveOut'};
-    yCat = categorical(yPred,gestures);
-end
-
-%% FUNCTION TO CLASSIFY PREDICTIONS
-function class = classifyPredictions(yPred)
-    gestures = {'fist', 'noGesture', 'open', 'pinch', 'waveIn', 'waveOut'};
-    categories = toCategoricalGesture(gestures);
-    
-    % Delete noGestures
-    idxs = cellfun(@(label) ~isequal(label,'noGesture'), yPred);
-    yPred = toCategoricalGesture(yPred(idxs));
-    
-    % Count the number of labels per gesture
-    catCounts = countcats(yPred);
-    [catCounts,indexes] = sort(catCounts,'descend');
-    newCategories = categories(indexes);
-    
-    % Set the class if labels are over the theashold
-    if catCounts(1) >= Shared.MIN_LABELS_SEQUENCE
-       class = newCategories(1);
-    else
-       class = toCategoricalGesture({'noGesture'}); 
-    end
-end
-
 %% FUNCTION TO EVALUATE SAMPLE FRAMES
 function [labels, timestamps, processingTimes] = evaluateSampleFrames(signal, groundTruth, model)
     
     % Calculate the number of windows
     numPoints = length(signal);
-    if isequal(Shared.FILLING_TYPE, 'before')
+    if isequal(Shared.FILLING_TYPE_EVAL, 'before')
          
         numWindows = floor((numPoints - (Shared.FRAME_WINDOW / 2)) / Shared.WINDOW_STEP_RECOG) + 1;
         stepLimit = numPoints - floor(Shared.FRAME_WINDOW / 2) + 1;
          
-    elseif isequal(Shared.FILLING_TYPE, 'none')
+    elseif isequal(Shared.FILLING_TYPE_EVAL, 'none')
         
         numWindows = floor((numPoints - (Shared.FRAME_WINDOW)) / Shared.WINDOW_STEP_RECOG) + 1;
         stepLimit = numPoints - Shared.FRAME_WINDOW + 1;
@@ -465,11 +350,11 @@ function [labels, timestamps, processingTimes] = evaluateSampleFrames(signal, gr
     
     % Preallocate space for the spectrograms
     labels = cell(1, numWindows);
-    timestamps = zeros(1,numWindows);
-    processingTimes = zeros(1,numWindows);
+    timestamps = zeros(1, numWindows);
+    processingTimes = zeros(1, numWindows);
     
     % Fill before frame classification
-    if isequal(Shared.FILLING_TYPE, 'before')
+    if isequal(Shared.FILLING_TYPE_EVAL, 'before')
         
         % Get a nogesture portion of the sample to use as filling
         if groundTruth
@@ -529,7 +414,6 @@ end
     Link to number of windows formula:
     https://stackoverflow.com/questions/53796545/number-of-overlapping-windows-of-a-given-length
 %}
-
 
 %% FOR TESTING
 %{

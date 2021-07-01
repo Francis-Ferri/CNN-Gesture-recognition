@@ -2,5 +2,8 @@ EMG-EPN612 Dataset
 Datastores
 DatastoresLSTM
 pruebas.m
-Models
-ModelsLSTM
+Models/model*
+ModelsLSTM/model*
+response.json
+response.mat
+results-test-user*

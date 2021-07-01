@@ -5,7 +5,9 @@
 %% SET DATASTORES PATHS
 dataDirTraining = fullfile('DatastoresLSTM', 'training');
 dataDirValidation = fullfile('DatastoresLSTM', 'validation');
-dataDirTesting = fullfile('DatastoresLSTM', 'testing');
+if Shared.includeTesting
+    dataDirTesting = fullfile('DatastoresLSTM', 'testing');
+end
 
 %% THE DATASTORES RE CREATED
 % The classes are defined
@@ -15,7 +17,9 @@ classes = Shared.setNoGestureUse(withNoGesture);
 % The datastores are created
 trainingDatastore = SpectrogramDatastoreLSTM(dataDirTraining);
 validationDatastore = SpectrogramDatastoreLSTM(dataDirValidation);
-testingDatastore = SpectrogramDatastoreLSTM(dataDirTesting);
+if Shared.includeTesting
+    testingDatastore = SpectrogramDatastoreLSTM(dataDirTesting);
+end
 %dataSample = preview(trainingDatastore);
 % Clean up variables
 clear dataDirTraining dataDirValidation withNoGesture
@@ -27,15 +31,20 @@ inputSize = trainingDatastore.FrameDimensions;
 % The amount of data to be used in the creation is specified ]0:1]
 trainingDatastore = setDataAmount(trainingDatastore, 1);
 validationDatastore = setDataAmount(validationDatastore, 1);
-testingDatastore = setDataAmount(testingDatastore, 1);
+if Shared.includeTesting
+    testingDatastore = setDataAmount(testingDatastore, 1);
+end
 
 %% THE DATA IS DIVIDED IN TRAINING-VALIDATION-TESTING
 % The total data for training-validation-tests is obtained
 numTrainingSamples = ['Training samples: ', num2str(trainingDatastore.NumObservations)];
 numValidationSamples = ['Validation samples: ', num2str(validationDatastore.NumObservations)];
-numTestingSamples = ['Testing samples: ', num2str(testingDatastore.NumObservations)];
-% The amount of training-validation-tests data is printed
-fprintf('\n%s\n%s\n%s\n', numTrainingSamples, numValidationSamples, numTestingSamples);
+if Shared.includeTesting
+    numTestingSamples = ['Testing samples: ', num2str(testingDatastore.NumObservations)];
+    fprintf('\n%s\n%s\n%s\n', numTrainingSamples, numValidationSamples, numTestingSamples);
+else
+    fprintf('\n%s\n%s\n', numTrainingSamples, numValidationSamples);
+end
 % Clean up variables
 clear numTrainingSamples numValidationSamples numTestingSamples
 
@@ -48,13 +57,13 @@ clear numClasses
 
 %% THE OPTIONS ARE DIFINED
 gpuDevice(1);
-maxEpochs = 10;%10
+maxEpochs = 10;%7 10
 miniBatchSize = 64;%64
 options = trainingOptions('adam', ...
     'InitialLearnRate', 0.001, ...
     'LearnRateSchedule','piecewise', ...
     'LearnRateDropFactor',0.2, ...
-    'LearnRateDropPeriod',8, ... %8
+    'LearnRateDropPeriod',8, ... %5 8
     'ExecutionEnvironment','gpu', ... %gpu
     'GradientThreshold',1, ...
     'MaxEpochs',maxEpochs, ...
@@ -77,13 +86,19 @@ clear options lgraph
 % The accuracy for training-validation-tests is obtained
 [accTraining, flattenLabelsTraining ] = calculateAccuracy(net, trainingDatastore);
 [accValidation, flattenLabelsValidation ] = calculateAccuracy(net, validationDatastore);
-[accTesting, flattenLabelsTesting ] = calculateAccuracy(net, testingDatastore);
+if Shared.includeTesting
+    [accTesting, flattenLabelsTesting ] = calculateAccuracy(net, testingDatastore);
+end
 
 % The amount of training-validation-tests data is printed
 strAccTraining = ['Training accuracy: ', num2str(accTraining)];
 strAccValidation = ['Validation accuracy: ', num2str(accValidation)];
-strAccTesting = ['Testing accuracy: ', num2str(accTesting)];
-fprintf('\n%s\n%s\n%s\n', strAccTraining, strAccValidation, strAccTesting);
+if Shared.includeTesting
+    strAccTesting = ['Testing accuracy: ', num2str(accTesting)];
+    fprintf('\n%s\n%s\n%s\n', strAccTraining, strAccValidation, strAccTesting);
+else
+    fprintf('\n%s\n%s\n', strAccTraining, strAccValidation);
+end
 
 % Clean up variables
 clear accTraining accValidation accTesting strAccTraining strAccValidation strAccTesting
@@ -91,7 +106,9 @@ clear accTraining accValidation accTesting strAccTraining strAccValidation strAc
 %% CONFUSION MATRIX FOR EACH DATASET
 calculateConfusionMatrix(flattenLabelsTraining, 'training');
 calculateConfusionMatrix(flattenLabelsValidation, 'validation');
-calculateConfusionMatrix(flattenLabelsTesting, 'testing');
+if Shared.includeTesting
+    calculateConfusionMatrix(flattenLabelsTesting, 'testing');
+end
 
 %% SAVE MODEL
 save(['ModelsLSTM/model_', datestr(now,'dd-mm-yyyy_HH-MM-ss')], 'net');
