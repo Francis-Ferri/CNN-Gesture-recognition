@@ -1,8 +1,9 @@
-EMG_EPN612_Dataset
-Deleted users
+EMG-EPN612 Dataset
 Datastores
-experimentos
+DatastoresLSTM
 pruebas.m
-ejemplo-filtro
-anterior
-change_theme
+Models/model*
+ModelsLSTM/model*
+response.json
+response.mat
+results-test-user*

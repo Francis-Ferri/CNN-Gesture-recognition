@@ -1,5 +1,5 @@
 %{ 
-
+    CNN
 %}
 
 classdef SpectrogramDatastore < matlab.io.Datastore & ...
@@ -197,7 +197,7 @@ function data = readDatastore(filename)
     data = load(filename);
 end
 
-%%
+%% FUNCTION TO MATCH THE NUMBER OF SAMPLES OF EACH GESTURE
 function ds = matchSampleNumberInOrder(ds, repetitions)
     labels = ds.Labels;
     gesturefiles = ds.Datastore.Files;
@@ -217,7 +217,7 @@ function ds = matchSampleNumberInOrder(ds, repetitions)
         % Get indexes of ones
         gestureIdxs = find(isGesture);
         
-        % Save daat until the limit (repetitions)
+        % Save data until the limit (repetitions)
         for j = 1:repetitions
             gestureLabels{j, 1} = char(gestures(i));
             gestureFiles{j, 1} = files{gestureIdxs(j)};
@@ -236,7 +236,7 @@ function ds = matchSampleNumberInOrder(ds, repetitions)
     ds.Datastore.Files = newFiles;
 end
 
-%%
+%% FUNCTION TO PREPARE A NEW DATASTORE
 function ds = prepareNewDatastore(ds, dsLabels, dsFiles)
     % Set the data to new datastores
     ds.NumObservations = length(dsLabels);

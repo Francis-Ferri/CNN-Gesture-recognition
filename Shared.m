@@ -1,3 +1,7 @@
+%{
+    GENERAL CONFIGURATIONS
+%}
+
 classdef Shared
     
     properties (Constant)
@@ -8,35 +12,42 @@ classdef Shared
         
         % Frame
         FRAME_WINDOW = 300;
-        WINDOW_STEP = 15;
+        WINDOW_STEP = 15; % To obtain the frames
+        % if frame > TOLERANCE_WINDOW || frame > TOLERNCE_GESTURE -> gesture
         TOLERANCE_WINDOW = 0.75;
-        TOLERNCE_GESTURE = 0.9;
+        TOLERNCE_GESTURE = 0.5; % 0.75 0.25; 
         
         % Recognition
-        WINDOW_STEP_RECOG = 15;
-        FRAME_CLASS_THRESHOLD = 0.5;
+        WINDOW_STEP_RECOG = 15; % 15 30
+        FRAME_CLASS_THRESHOLD = 0.5; % 0.75 0.25;
+        % if labels > MIN_LABELS_SEQUENCE -> true
         MIN_LABELS_SEQUENCE = 4;
-        FILLING_TYPE = 'before'
-        POSTPROCESS = '1-1';
+        FILLING_TYPE = 'before'; % 'before' 'none'
+        POSTPROCESS = '1-1'; % '1-1' '1-2' '2-1'
+        
+        % Evaluation
+        FILLING_TYPE_EVAL = 'none'; % 'before' 'none'
+        
+        % For LSTM
+        FILLING_TYPE_LSTM = 'before'; % 'before' 'none'
+        NOGESTURE_FILL = 'some' % 'some' 'all'
+        NOGESTURE_IN_SEQUENCE = 3; % if 'some'
+        WINDOW_STEP_LSTM = 15; % 15 30
+        PAD_KIND = 'shortest'; % 'shortest' 'longest'
+        TOLERNCE_GESTURE_LSTM = 0.5; % 0.75 0.25;
+        NUM_HIDDEN_UNITS = 128; % 128 %58(60) %27(30)
         
         % Samples and signals
         numSamplesUser = 150;
         numGestureRepetitions = 25;
         numChannels = 8;
-        noGestureMean = -0.83;
-        noGestureStd = 0.17;
         
-        % User
-        numTestUsers = 14;
+        % User distribution
+        includeTesting = false; %false true
+        numTestUsers = 16;
     end
     
     methods(Static)
-        
-        % FUNCTION TO READ A FILE
-        function data = readFile(filename)
-            % Load a Matlab file
-            data = load(filename).data;
-        end
         
         % GET THE USER LIST
         function [users, dataPath] = getUsers(dataDir, subDir)
@@ -55,6 +66,12 @@ classdef Shared
             % Extract samples
             trainingSamples = jsonData.trainingSamples;
             testingSamples = jsonData.testingSamples;
+        end
+        
+        % FUNCTION TO READ A FILE
+        function data = readFile(filename)
+            % Load a Matlab file
+            data = load(filename).data;
         end
         
         % FUNCTION TO GET THE EMG SIGNAL
@@ -111,9 +128,9 @@ classdef Shared
             spectrograms = zeros(length(Shared.FRECUENCIES), numCols, Shared.numChannels);
             % Spectrograms generation
             for i = 1:size(signal, 2)
-                [~,~,~,ps] = spectrogram(signal(:,i), Shared.WINDOW, Shared.OVERLAPPING, ... 
-                    Shared.FRECUENCIES, sampleFrecuency, 'yaxis');
-                spectrograms(:,:,i) = ps;
+                [s,~,~,~] = spectrogram(signal(:,i), Shared.WINDOW, Shared.OVERLAPPING, ... 
+                    Shared.FRECUENCIES, sampleFrecuency, 'yaxis'); % [~,~,~,ps]
+                spectrograms(:,:,i) = abs(s); % ps;
             end
         end
         
@@ -153,6 +170,110 @@ classdef Shared
             labels = categorical(labels, classes);
         end
         
+        % FUNCTION TO CLASSIFY PREDICTIONS
+        function class = classifyPredictions(yPred)
+            categories = Shared.setNoGestureUse(true); % Provemos a quitar el categorical
+
+            % Delete noGestures
+            idxs = cellfun(@(label) ~isequal(label,'noGesture'), yPred);
+            yPred = categorical(yPred(idxs),Shared.setNoGestureUse(true));
+
+            % Count the number of labels per gesture
+            catCounts = countcats(yPred);
+            [catCounts,indexes] = sort(catCounts,'descend');
+            newCategories = categories(indexes);
+
+            % Set the class if labels are over the theashold
+            if catCounts(1) >= Shared.MIN_LABELS_SEQUENCE
+               class = newCategories(1);
+            else
+               class = categorical({'noGesture'}, Shared.setNoGestureUse(true)); 
+            end
+        end
+        
+        % FUNCTION TO POST PROCESS THE SAMPLE
+        function labels = postprocessSample(labels, class)
+
+            if ismember(Shared.POSTPROCESS, {'1-1', '2-1', '1-2'})
+
+                % Check the first label
+                right = isequal(labels{1,1}, 'noGesture');
+                if isequal(Shared.POSTPROCESS, '1-2')
+                    right = isequal(labels{1,2}, class) || isequal(labels{1,3}, 'noGesture');
+                end
+                current = isequal(labels{1,1}, class);
+                if right && current
+                    labels{1,1} = 'noGesture';
+                end
+
+                % Set start and finish for middle labels
+                start = 2; finish = length(labels) - 1; % 1-1 by default
+                if isequal(Shared.POSTPROCESS, '2-1')
+                    start = 3;
+                elseif isequal(Shared.POSTPROCESS, '1-2')
+                    finish = length(labels) - 2;
+                end
+
+                % Check for misclassified labels
+                for i = start:finish
+
+                    % Check left-current-right classes
+                    left = isequal(labels{1,i-1}, class);
+                    right = isequal(labels{1,i+1}, class);
+                    if isequal(Shared.POSTPROCESS, '2-1')
+                        left = isequal(labels{1,i-1}, class) || isequal(labels{1,i-2}, class);
+                    elseif isequal(Shared.POSTPROCESS, '1-2')
+                        right = isequal(labels{1,i+1}, class) || isequal(labels{1,i+2}, class);
+                    end
+                    current = ~isequal(labels{1,i}, class);
+
+                    % Replace the class if matches the criterium
+                    if left && right && current
+                        labels{1,i} = class;
+                    end
+
+                    % Replace the class if matches the criterium
+                    if ~left && ~right && ~current
+                        labels{1,i} = 'noGesture';
+                    end
+
+                end
+
+                % Check the last label
+                left = isequal(labels{1,length(labels) - 1}, 'noGesture');
+                if isequal(Shared.POSTPROCESS, '2-1')
+                    left = isequal(labels{1, length(labels) - 1}, 'noGesture') || ... 
+                        isequal(labels{1, length(labels) - 2}, 'noGesture');
+                end
+                current = isequal(labels{1,length(labels)}, class);
+
+                % Replace the class if matches the criterium
+                if left && current
+                    labels{1,i} = 'noGesture';
+                end
+
+            end
+
+            % Set wrong labels to noGestute
+            for i = 1:length(labels)
+                if ~isequal(labels{1,i}, class)
+                    labels{1,i} = 'noGesture';
+                end
+            end
+
+            % Transform to categorical
+            labels = categorical(labels, Shared.setNoGestureUse(true));
+        end
+        
     end
-    
+
 end
+
+%% EXTRA
+%{
+    %% PROPERTIES
+    %noGestureMean = -0.83;
+    %noGestureStd = 0.17;
+    %CONSIDER_PREVIOUS = true % true false
+    %SEQUENCE_INIT = 'noGesture'; % zeros noGesture 
+%}
