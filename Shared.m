@@ -130,7 +130,7 @@ classdef Shared
             for i = 1:size(signal, 2)
                 [s,~,~,~] = spectrogram(signal(:,i), Shared.WINDOW, Shared.OVERLAPPING, ... 
                     Shared.FRECUENCIES, sampleFrecuency, 'yaxis'); % [~,~,~,ps]
-                spectrograms(:,:,i) = abs(s); % ps;
+                spectrograms(:,:,i) = abs(s).^2; % ps;
             end
         end
         
